@@ -13,7 +13,7 @@ from ubuntu_update import engine
 assert os.geteuid()==0,'Run inside bwrap user namespace'
 assert Path('/run').exists()
 output=io.StringIO()
-with patch('sys.argv',['helper','--apply']),patch('sys.stdin',io.StringIO('{"continue": true}\n'*30)),patch('sys.stdout',output),patch('ubuntu_update.engine.apt_update',side_effect=RuntimeError('APT lock timeout')),patch('ubuntu_update.engine.shutil.which',return_value=None),patch('ubuntu_update.engine.forticlient'),patch('ubuntu_update.packages.update_package'):
+with patch('sys.argv',['helper','--apply']),patch('sys.stdin',io.StringIO('{"continue": true}\n'*30)),patch('sys.stdout',output),patch('ubuntu_update.engine.apt_update',side_effect=RuntimeError('APT lock timeout')),patch('ubuntu_update.engine.shutil.which',return_value=None),patch('ubuntu_update.packages.update_package'):
     code=engine.main()
 assert code==1
 messages=[json.loads(line) for line in output.getvalue().splitlines()]
@@ -32,3 +32,9 @@ with open('/run/ubuntu-update-utility.lock','w') as lock:
     assert events[-1]['type']=='result' and events[-1]['category']=='Sessione'
     assert 'già in corso' in events[-1]['detail']
 print('Concurrent administrative operation rejected: passed')
+
+# The same installed entrypoint dispatches assisted DEB requests with a caller UID.
+with patch.dict(os.environ,{'PKEXEC_UID':'1001'}),patch('sys.argv',['helper','--local-deb']),patch('sys.stdin',io.StringIO('{"package":"example","path":"/tmp/not-opened.deb"}\n')),patch('ubuntu_update.local_deb.apply',return_value=True) as apply:
+    assert engine.main()==0
+    assert apply.call_args.args[2]==1001
+print('Assisted DEB dispatch in isolated administrative process: passed')

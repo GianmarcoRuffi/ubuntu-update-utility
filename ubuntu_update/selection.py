@@ -3,8 +3,10 @@ import json
 import re
 import sys
 
-ARCHIVES = {'Postman', 'JMeter', 'Audacity standalone', 'Forge'}
-DEBS = {'docker-desktop', 'dbeaver-ce', 'github-desktop', 'teams-for-linux'}
+try:
+    from .catalog import ARCHIVES, DEBS
+except ImportError:
+    from catalog import ARCHIVES, DEBS
 
 
 def read_selection(stream=None):
@@ -20,6 +22,8 @@ def read_selection(stream=None):
             raise ValueError('Identificatore non valido')
         prefix, separator, name = value.partition(':')
         valid = separator and (
+            prefix == 'install' and re.fullmatch(r'[0-9a-f]{64}',name) or
+            prefix in ('flatpak-user','flatpak-system') and re.fullmatch(r'(?:app/)?[A-Za-z0-9_][A-Za-z0-9_.-]+/[A-Za-z0-9_]+/[A-Za-z0-9_.-]+',name) or
             prefix == 'archive' and name in ARCHIVES or
             prefix == 'deb' and name in DEBS or
             prefix == 'snap' and re.fullmatch(r'[a-z0-9][a-z0-9-]*', name)

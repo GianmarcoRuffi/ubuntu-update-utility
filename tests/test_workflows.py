@@ -30,13 +30,8 @@ class Workflows(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp,patch('ubuntu_update.engine.kernel_versions_to_keep',return_value={'6.17.0-1-generic'}),patch('ubuntu_update.engine.capture',side_effect=['Inst curl (1)','Remv libunused (1)']),patch('ubuntu_update.engine.tempfile.TemporaryDirectory',return_value=tempfile.TemporaryDirectory(dir=temp)):
             engine.apt_update(s)
         self.assertFalse(any('autoremove' in cmd for cmd in s.commands))
-    def test_vpn_candidate_confirmation_rejected(self):
-        s=FakeSession(False)
-        r=subprocess.CompletedProcess([],0,'ii  1.0','')
-        with patch('subprocess.run',return_value=r),patch('ubuntu_update.engine.capture',return_value='Candidate: 2.0\n    500 https://repo.fortinet.com stable/main'):
-            engine.forticlient(s,True)
-        self.assertEqual(s.commands,[])
-        self.assertEqual(s.results[-1]['status'],'saltato')
+    def test_vpn_is_a_regular_apt_package(self):
+        self.assertFalse(engine.protected_change('Inst forticlient (8.0)'))
     def test_firmware_refusal(self):
         s=FakeSession(False)
         r=subprocess.CompletedProcess([],0,'Firmware update; requires reboot','')

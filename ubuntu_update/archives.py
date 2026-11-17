@@ -2,6 +2,10 @@
 import json
 import os
 from pathlib import Path
+try:
+    from .paths import data_home,state_home,config_home,app_roots
+except ImportError:
+    from paths import data_home,state_home,config_home,app_roots
 import re
 import shutil
 import subprocess
@@ -51,7 +55,7 @@ def running_under(path):
         try:
             exe = str((proc/'exe').resolve(strict=True))
             cmd = (proc/'cmdline').read_bytes().decode(errors='replace')
-            if exe.startswith(prefix) or prefix in cmd: return True
+            if exe==str(path.resolve()) or exe.startswith(prefix) or prefix in cmd or str(path.resolve()) in cmd.split('\0'): return True
         except (OSError, RuntimeError): continue
     return False
 
@@ -70,7 +74,7 @@ def discover(home):
         if path.is_dir(): items.append(dict(name='Audacity standalone',version=path.name.removeprefix('Audacity-'),path=path))
     for path in home.glob('forge-installer-*'):
         if path.is_dir(): items.append(dict(name='Forge',version=path.name.removeprefix('forge-installer-').replace('-SNAPSHOT','~snapshot'),path=path))
-    managed = home/'.local/share/ubuntu-update-utility/apps'
+    managed = data_home(home)/'ubuntu-update-utility/apps'
     for folder in managed.glob('*'):
         if folder.name.endswith(('.previous','.failed')) or folder.name.startswith('.'): continue
         metadata = folder/'utility-version.json'
@@ -78,7 +82,11 @@ def discover(home):
             try: data=json.loads(metadata.read_text())
             except (ValueError,OSError):
                 items.append(dict(name=folder.name,version=None,path=folder)); continue
-            if data.get('name') not in ('Postman','JMeter','Audacity standalone','Forge'): continue
+            try:
+                from .catalog import ARCHIVES
+            except ImportError:
+                from catalog import ARCHIVES
+            if data.get('name') not in ARCHIVES: continue
             items = [i for i in items if i['name'] != data['name']]
             items.append(dict(name=data['name'],version=data.get('version'),path=folder))
     return items
@@ -113,14 +121,14 @@ def update(s, item, apply, home):
     if source['version'] and not sources.newer(source['version'],item['version']):
         s.result(name,'nessun aggiornamento',str(item['version'])); return
     if not apply:
-        s.candidate('archive:'+name,name,item['version'],source['version'],'Standalone')
+        s.emit('candidate',id=item.get('id','archive:'+name),name=name,current=item['version'],available=source['version'],kind='Standalone',mode='automatic',path=str(old))
         s.result(name,'aggiornamento disponibile' if source['version'] else 'verifica archivio richiesta',
                  f"{item['version']} → {source['version'] or 'ultima versione del produttore'}\n{source['page']}"); return
     if running_under(old):
         s.result(name,'intervento richiesto','Chiudere l’applicazione e riprovare.'); return
-    base=home/'.local/share/ubuntu-update-utility/apps'
+    base=data_home(home)/'ubuntu-update-utility/apps'
     base.mkdir(parents=True,exist_ok=True)
-    target=base/name.lower().replace(' ','-')
+    target=base/item.get('target',name.lower().replace(' ','-'))
     with tempfile.TemporaryDirectory(prefix='.staging-',dir=base) as temp:
         temp=Path(temp); archive=temp/source['name']
         sources.fetch(source['url'],archive,limit=3*1024**3)
@@ -165,7 +173,7 @@ def update(s, item, apply, home):
             if any(not jar.name.startswith('ApacheJMeter_') for jar in (old/'lib/ext').glob('*.jar')):
                 s.result(name,'intervento richiesto','Plugin personalizzati presenti: migrazione da verificare.'); return
         relative=executable.relative_to(staged)
-        (staged/'utility-version.json').write_text(json.dumps(dict(name=name,version=source['version'])))
+        (staged/'utility-version.json').write_text(json.dumps(dict(name=name,version=source['version'],provider='builtin',entrypoint=str(relative),original_id=item.get('id',''))))
         # Initial copy remains intact as an additional recovery point. Never delete
         # data from /opt or the user's original installation automatically.
         if not target.exists() and not s.confirm('Attivare '+name+' '+source['version']+'?',
@@ -188,7 +196,7 @@ def update(s, item, apply, home):
             activate(staged,target)
         newexe=target/relative
         try:
-            replace_launchers(home,old,target,newexe,name)
+            replace_launchers(home,old,target,newexe,name,item.get('wrapper',None))
         except BaseException:
             # Preserve both complete versions if launcher activation fails.
             failed=target.with_name(target.name+'.failed')
@@ -196,14 +204,15 @@ def update(s, item, apply, home):
                 target.rename(failed)
                 target.with_name(target.name+'.previous').rename(target)
             raise
+        if item.get('id'): s.emit('completed',id=item['id'])
         s.result(name,'aggiornato',source['version']+'; precedente conservata in '+str(old))
 
 
-def replace_launchers(home, old, target, executable, name):
-    directory=home/'.local/share/applications'; directory.mkdir(parents=True,exist_ok=True)
+def replace_launchers(home, old, target, executable, name, wrapper_path=None):
+    directory=data_home(home)/'applications'; directory.mkdir(parents=True,exist_ok=True)
     # Preserve custom JMeter shell wrapper, including JAVA_HOME and suite args.
     wrappers={'JMeter':home/'.local/bin/apache-jmeter-gui','Audacity standalone':home/'.local/bin/audacity'}
-    wrapper=wrappers.get(name)
+    wrapper=Path(wrapper_path) if wrapper_path else wrappers.get(name) if wrapper_path is None else None
     if wrapper and wrapper.is_symlink():
         backup=wrapper.with_name(wrapper.name+'.previous')
         if backup.is_symlink(): backup.unlink()

@@ -14,7 +14,7 @@ class RejectedAuthentication:
     def __exit__(self,*args):pass
     def wait(self):return 126
 
-app=Utility()
+app=Utility(autostart=False)
 patcher=patch('ubuntu_update.app.subprocess.Popen',RejectedAuthentication)
 
 def finished():
@@ -47,6 +47,7 @@ def verify():
     assert not app.all_check.get_inconsistent()
     app.action='selected';app.outcomes=[]
     app.event(dict(type='result',category='Forge',status='aggiornato',detail='2'),None)
+    app.event(dict(type='completed',id='archive:Forge'),None)
     app.event(dict(type='result',category='Snap: demo-app',status='errore',detail='Test errore'),None)
     app.event(dict(type='summary',reboot=False),None)
     assert app.last_summary is None,'No modal before all phases finish'

@@ -2,10 +2,11 @@ import unittest
 from ubuntu_update.engine import protected_change
 class Safety(unittest.TestCase):
     def test_protected(self):
-        for text in ['Inst forticlient (1)', 'Remv linux-image-1', 'Purg app']:
+        for text in ['Remv linux-image-1', 'Purg app']:
             self.assertTrue(protected_change(text))
     def test_regular(self):
         self.assertFalse(protected_change('Inst curl (1)'))
+        self.assertFalse(protected_change('Inst forticlient (1)'))
 
 from ubuntu_update.engine import cleanup_plan
 from ubuntu_update.runtime import Session, Cancelled
@@ -13,8 +14,8 @@ from unittest.mock import patch
 import io
 
 class Cleanup(unittest.TestCase):
-    def test_kernel_and_vpn_never_removed(self):
-        for package in ('linux-image-6.17.0', 'linux-modules-6.17.0', 'forticlient', 'ubuntu-update-utility'):
+    def test_kernel_and_utility_never_removed(self):
+        for package in ('linux-image-6.17.0', 'linux-modules-6.17.0', 'ubuntu-update-utility'):
             self.assertTrue(cleanup_plan('Remv '+package)[1])
     def test_normal_cleanup_requires_candidates(self):
         self.assertEqual(cleanup_plan('Remv libunused (1.0)'), (['libunused'], False))

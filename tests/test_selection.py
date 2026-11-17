@@ -36,10 +36,10 @@ class SelectedWorkers(unittest.TestCase):
     def test_user_only_runs_selected_archive(self):
         session=FakeSession()
         items=[dict(name='Forge',version='1',path=Path('/forge')),dict(name='Postman',version='1',path=Path('/postman'))]
-        with tempfile.TemporaryDirectory() as temp,patch('pathlib.Path.home',return_value=Path(temp)),patch('sys.argv',['worker','--selected']),patch('sys.stdin',io.StringIO('{"selected":["archive:Forge","snap:firefox"]}\n')),patch('ubuntu_update.user_worker.os.geteuid',return_value=1001),patch('ubuntu_update.user_worker.Session',return_value=session),patch('ubuntu_update.user_worker.discover',return_value=items),patch('ubuntu_update.user_worker.update') as update,patch('ubuntu_update.user_worker.special_apps') as special:
+        with tempfile.TemporaryDirectory() as temp,patch('pathlib.Path.home',return_value=Path(temp)),patch('sys.argv',['worker','--selected']),patch('sys.stdin',io.StringIO('{"selected":["archive:Forge","snap:firefox"]}\n')),patch('ubuntu_update.user_worker.os.geteuid',return_value=1001),patch('ubuntu_update.user_worker.Session',return_value=session),patch('ubuntu_update.user_worker.discover',return_value=items),patch('ubuntu_update.user_worker.update') as update:
             self.assertEqual(user_worker.main(),0)
             update.assert_called_once_with(session,items[0],True,Path(temp))
-        special.assert_not_called();self.assertEqual(session.commands,[])
+        self.assertEqual(session.commands,[])
     def test_clean_root_does_not_install_anything(self):
         session=FakeSession()
         with patch('sys.argv',['helper','--clean']),patch('ubuntu_update.engine.os.geteuid',return_value=0),patch('ubuntu_update.engine.open',return_value=io.StringIO(),create=True),patch('fcntl.flock'),patch('ubuntu_update.engine.Session',return_value=session),patch('ubuntu_update.engine.shutil.which',return_value='/binary'),patch('ubuntu_update.engine.apt_update') as update,patch('ubuntu_update.engine.apt_cleanup') as clean,patch('ubuntu_update.engine.installer_cleanup'),patch('ubuntu_update.engine.snap_cleanup') as snap,patch('ubuntu_update.packages.update_package') as packages:

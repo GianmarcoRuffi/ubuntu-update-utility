@@ -1,69 +1,124 @@
 # Ubuntu Update Utility
 
-Utility desktop in italiano per Ubuntu 26.04, Python 3, GTK4 e Libadwaita.
+Applicazione desktop in italiano per Ubuntu: ricerca generale delle installazioni,
+aggiornamenti selettivi e pulizia. Richiede Python 3.12+, GTK4 e Libadwaita 1.2+;
+il collaudo locale è eseguito su Ubuntu 26.04.
 
 ## Installazione e avvio
 
-Costruire con `sh packaging/build.sh`. Installare il pacchetto prodotto in `dist`
-con un doppio clic oppure `sudo apt install ./dist/ubuntu-update-utility_0.4.0_all.deb`.
-Aprire **Ubuntu Update Utility** dal menu applicazioni. Per il collegamento sul
-Desktop eseguire `python3 packaging/desktop-shortcut.py` dopo l’installazione;
-il desktop potrebbe richiedere di scegliere **Consenti avvio** al primo clic.
+Costruire con `sh packaging/build.sh`. Installare il pacchetto in `dist` con un
+doppio clic oppure:
 
-**Cerca aggiornamenti** individua le nuove versioni. Al termine, il pannello a
-sinistra mostra le app standalone e Snap con icona e checkbox: selezionare quelle
-desiderate e premere **Aggiorna selezionate**. Le app non selezionate vengono
-escluse anche dai motori di aggiornamento. Le versioni vengono ricontrollate prima
-di installarle.
+```sh
+sudo apt install ./dist/ubuntu-update-utility_0.5.0_all.deb
+```
 
-Il pannello a destra contiene le operazioni e il registro. **Aggiorna sistema**
-gestisce separatamente APT, Flatpak, driver e firmware. **Pulisci** esegue la
-pulizia della cache dei pacchetti APT, `autoremove --purge` con anteprima e conferma,
-la rimozione delle revisioni Snap obsolete (conservandone una precedente), dei
-runtime Flatpak inutilizzati e dei temporanei/cache dell’utility. Non aggiorna
-applicazioni e non cancella Download, dati personali o copie di recupero.
+Aprire **Ubuntu Update Utility** dal menu. Per il collegamento Desktop eseguire
+`python3 packaging/desktop-shortcut.py` dopo l’installazione. Il desktop potrebbe
+richiedere **Consenti avvio** al primo clic.
 
-L’autenticazione è gestita da Polkit. FortiClient, rimozioni, nuovi driver e firmware
-mantengono le conferme dedicate. **Annulla dopo l’operazione** attende la conclusione
-dell’installazione corrente. Al termine di aggiornamenti, pulizia o ripristino una
-finestra riepiloga operazioni riuscite, fallite e da completare, comprese entrambe
-le fasi di sistema e utente. Non viene eseguito alcun riavvio automatico.
+All’apertura parte soltanto la ricerca. Non vengono installate applicazioni.
+Il pulsante **Cerca aggiornamenti** permette di ripeterla.
 
-Il pacchetto include l’icona dedicata nel tema hicolor e i metadati AppStream per
-i gestori software che li supportano. La stessa icona compare nella barra della
-finestra e nel menu applicazioni.
+## Lista e selezione
 
-## Applicazioni e recupero
+La ricerca legge database dei pacchetti, launcher utente e di sistema, directory
+XDG, `/opt`, `/usr/local/bin`, `~/Applications`, `~/.local/opt` e le directory utente del PATH. Non esegue i
+programmi per scoprirne la versione e non scandisce indiscriminatamente documenti
+o altri dischi. Le installazioni separate della stessa applicazione hanno
+identificatori distinti; i dettagli della riga mostrano il percorso.
 
-APT, Snap e Flatpak sono gestiti separatamente. I pacchetti con repository APT
-non vengono aggiornati anche come standalone. Le sorgenti dedicate sono Docker,
-DBeaver, shiftkey/desktop, IsmaelMartinez/teams-for-linux, Postman, Apache JMeter,
-audacity/audacity e Card-Forge/forge. Forge segue le release stabili.
+Il pannello sinistro distingue:
 
-Gli archivi vengono installati in `~/.local/share/ubuntu-update-utility/apps`.
-Una copia `.previous` permette il recupero con **Ripristina versione precedente**.
-La prima installazione originale viene mantenuta: l’utility non cancella directory
-preesistenti in `/opt`, progetti, database o salvataggi. Gli installer scaricati
-vengono eliminati al termine, anche in caso di errore. Per i pacchetti DEB il
-recupero dipende dai pacchetti precedenti disponibili attraverso il produttore/APT.
+- **Aggiornamenti disponibili**: versione o nuovo contenuto verificati per Snap,
+  Flatpak o standalone con una fonte riconosciuta.
+- **Da verificare / aggiornamento assistito**: applicazioni individuate, comprese
+  quelle senza una versione confrontabile, una fonte nota o un aggiornamento
+  automatizzabile. La presenza qui non afferma che esista una versione nuova.
 
-XAMPP e Gpick personalizzato mostrano disponibilità e istruzioni: migrazioni di
-database e ricompilazioni richiedono intervento manuale. Le altre applicazioni
-individuate vengono segnalate senza inventare una verifica degli aggiornamenti.
-I plugin JMeter personalizzati possono richiedere migrazione manuale.
+Le checkbox partono deselezionate. **Aggiorna selezionate** interviene soltanto
+sulle installazioni scelte. Non esistono esclusioni personali per FortiClient,
+Gpick, XAMPP o altri nomi. Fonti, versioni e disponibilità vengono ricontrollate
+prima dell’installazione. Canali e blocchi dei gestori vengono rispettati.
 
-I registri delle sessioni sono in `~/.local/state/ubuntu-update-utility`.
-La password è gestita da Polkit e non viene registrata. Il helper amministrativo
-usa esclusivamente operazioni e sorgenti definite nel pacchetto installato.
+**APT resta separato**: un’app con repository APT configurato segue **Aggiorna
+sistema**. Quel pulsante gestisce APT, driver raccomandati e firmware; Snap e
+Flatpak si selezionano nella lista. Le operazioni amministrative richiedono
+l’autenticazione Polkit, senza memorizzare la password.
 
-## Sviluppo e verifiche
+## Standalone e percorso assistito
 
-`python3 -m unittest discover -s tests -v` esegue i test di motore e sicurezza.
-`python3 tests/gui_smoke.py` controlla la finestra su un display grafico attivo,
-senza avviare aggiornamenti. `python3 ubuntu_update/app.py` avvia la GUI dai
-sorgenti; l’applicazione degli aggiornamenti di sistema richiede il pacchetto
-installato, con helper di proprietà root.
+Gli aggiornatori dedicati esistenti sono adattatori del catalogo comune. Postman,
+JMeter, Audacity e Forge vengono riconosciuti dai metadati della loro installazione,
+anche in percorsi diversi da quelli del PC originale. I pacchetti Docker Desktop,
+DBeaver, GitHub Desktop e Teams hanno adattatori dedicati quando non gestiti da APT.
+Le build di sviluppo non vengono trasformate silenziosamente in release stabili.
 
-Disinstallare con `sudo apt remove ubuntu-update-utility`. Le applicazioni già
-aggiornate e le copie di recupero restano disponibili. Rimuovere il collegamento
-dal desktop manualmente se creato.
+Il motore generale riconosce informazioni di aggiornamento AppImage, release
+GitHub associate al progetto, manifest JSON e appcast XML. Controlla i pacchetti,
+i checksum pubblicati e l’architettura. Per gli archivi generici è necessario
+identificare l’eseguibile e verificare il launcher; installazioni contenenti dati
+locali richiedono assistenza per la migrazione.
+
+Selezionando una riga assistita è possibile:
+
+- consultare i passaggi necessari e aprire il sito ufficiale;
+- associare una fonte e, se necessario, dichiarare la versione installata;
+- specificare repository, nome del pacchetto, canale ed eseguibile nelle opzioni
+  avanzate, oppure indicare un manifest JSON/appcast;
+- scegliere un DEB già scaricato per aggiornare il corrispondente pacchetto
+  installato. L’helper verifica una copia privata del file, prodotto, versione,
+  architettura e dipendenze prima di chiedere conferma.
+
+Le associazioni sono salvate per installazione in
+`${XDG_CONFIG_HOME:-~/.config}/ubuntu-update-utility/sources.json`.
+Dopo **Salva fonte**, ripetere la ricerca. Un manifest JSON semplice usa
+`version`, `url` HTTPS e, quando pubblicato, `sha256`.
+
+FortiClient può richiedere accesso al portale o indicazioni aziendali; XAMPP può
+richiedere esportazione e migrazione di database; Gpick compilato localmente può
+richiedere una nuova compilazione. Questi passaggi non vengono nascosti né
+considerati completati solo perché sono state aperte le istruzioni. Non vengono
+eseguiti comandi shell definiti nelle associazioni delle fonti.
+
+## Pulizia, recupero e riepilogo
+
+**Pulisci** è indipendente dagli aggiornamenti: pulisce la cache APT, propone
+`autoremove --purge` con anteprima e conferma, rimuove revisioni Snap obsolete
+conservandone una precedente, runtime Flatpak inutilizzati e temporanei
+riconoscibili dell’utility. Conserva kernel necessari e copie di recupero.
+Non svuota Download né cerca file personali da cancellare.
+
+Le installazioni in archivio sono preparate separatamente e conservano una copia
+`.previous`. Le AppImage aggiornabili dall’utente mantengono il percorso originale
+e una copia precedente. **Ripristina versione precedente** permette di scambiarle.
+Le installazioni e i backup creati dalle versioni precedenti restano riconoscibili.
+Il recupero dei DEB dipende invece dai pacchetti precedenti del produttore/APT.
+
+**Annulla dopo l’operazione** attende la conclusione dell’installazione corrente.
+Il riepilogo finale raccoglie successi, errori, rinunce e passaggi ancora necessari
+di entrambe le fasi. Nessun riavvio automatico. Registri delle sessioni in
+`~/.local/state/ubuntu-update-utility`.
+
+## Installer e verifiche
+
+Icona SVG, desktop entry e metadati AppStream sono inclusi nel DEB. La schermata
+locale di Ubuntu App Center usa comunque un’icona generica: è un limite del suo
+[costruttore per i DEB locali](https://github.com/ubuntu/app-center/blob/main/packages/app_center/lib/apps/app_title_bar.dart).
+
+```sh
+python3 -m unittest discover -s tests -v
+python3 tests/gui_smoke.py
+python3 tests/gui_assistance.py
+python3 tests/read_only_check.py
+sh packaging/build.sh
+python3 tests/package_check.py
+```
+
+Le prove grafiche richiedono un display. I test non applicano aggiornamenti al PC.
+`python3 tests/gui_preview.py` produce un’anteprima con dati di esempio.
+Vedere `VALIDATION.md` per i collaudi isolati e i limiti della verifica.
+
+Disinstallare con `sudo apt remove ubuntu-update-utility`. Applicazioni aggiornate,
+associazioni e copie di recupero rimangono disponibili. Rimuovere manualmente il
+collegamento Desktop se creato.

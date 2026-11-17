@@ -15,7 +15,7 @@ except ImportError:
 
 
 def protected_change(output):
-    return any(line.startswith(('Inst forticlient', 'Remv ', 'Purg ')) for line in output.splitlines())
+    return any(line.startswith(('Remv ', 'Purg ')) for line in output.splitlines())
 
 
 def capture(args):
@@ -48,7 +48,7 @@ def cleanup_plan(output, keep_kernels=None):
     forbidden=False
     for package in removed:
         name=package.split(':',1)[0]
-        if name.startswith(('forticlient','ubuntu-update-utility')): forbidden=True
+        if name.startswith(('ubuntu-update-utility',)): forbidden=True
         if name.startswith(('linux-image','linux-headers','linux-modules')):
             if keep_kernels is None or not re.search(r'-[0-9]',name): forbidden=True
             elif any(name.endswith('-'+version) or name.endswith('-'+version.rsplit('-',1)[0]) for version in keep_kernels): forbidden=True
@@ -59,7 +59,7 @@ def apt_update(s,clean_after=True):
     with tempfile.TemporaryDirectory(prefix='ubuntu-update-', dir='/run') as directory:
         prefs = Path(directory)/'preferences'
         original = Path('/etc/apt/preferences')
-        prefs.write_text((original.read_text() if original.exists() else '')+'\nPackage: forticlient*\nPin: version *\nPin-Priority: -1\n')
+        prefs.write_text((original.read_text() if original.exists() else '')+'\n')
         base = ['/usr/bin/apt-get', '-o', 'DPkg::Lock::Timeout=60', '-o', 'Dir::Etc::preferences='+str(prefs)]
         s.command(base+['-o', 'APT::Update::Error-Mode=any', 'update'])
         plan = capture(base+['-s', '--with-new-pkgs', 'upgrade'])
@@ -116,26 +116,6 @@ def firmware(s):
     else: s.result('Firmware', 'saltato')
 
 
-def forticlient(s, apply):
-    result = subprocess.run(['/usr/bin/dpkg-query','-W','-f=${db:Status-Abbrev} ${Version}','forticlient'],capture_output=True,text=True)
-    if not result.stdout.startswith('ii '):
-        s.result('FortiClient','saltato','Applicazione non installata.'); return
-    policy=capture(['/usr/bin/apt-cache','policy','forticlient'])
-    if not re.search(r'^\s+\d+ https?://',policy,re.M):
-        s.result('FortiClient','verifica manuale','Escluso dagli aggiornamenti automatici. Nessun repository configurato; controllare la versione compatibile sul portale Fortinet. https://www.fortinet.com/support/product-downloads'); return
-    candidate=re.search(r'Candidate: (\S+)',policy)
-    current=result.stdout.split()[-1]
-    if not candidate or candidate[1] in (current,'(none)'):
-        s.result('FortiClient','nessun aggiornamento','Escluso dall’aggiornamento automatico.'); return
-    if not apply:
-        s.result('FortiClient','intervento richiesto',policy); return
-    if s.confirm('Aggiornare FortiClient?',policy+'\nPuò interrompere la VPN. Questa scelta vale soltanto per questa esecuzione.'):
-        args=['/usr/bin/apt-get','-o','DPkg::Lock::Timeout=60','--no-remove']
-        s.command(args+['-y','-o','Dpkg::Options::=--force-confold','install','forticlient='+candidate[1]])
-        s.result('FortiClient','aggiornato',candidate[1])
-    else: s.result('FortiClient','saltato')
-
-
 def snap_update(s, apply, selected=None):
     if not apply:
         output=capture(['/usr/bin/snap','refresh','--list'])
@@ -176,6 +156,7 @@ def snap_update(s, apply, selected=None):
     for package in packages:
         if not re.fullmatch(r'[a-z0-9][a-z0-9-]*',package): continue
         s.checkpoint(); s.command(['/usr/bin/snap','refresh',package])
+        s.emit('completed',id='snap:'+package)
         s.result('Snap: '+package,'aggiornato')
     s.result('Snap','aggiornato')
 
@@ -205,6 +186,12 @@ def installer_cleanup(s, locations=None):
 
 
 def main():
+    if sys.argv[1:]==['--local-deb']:
+        try:
+            from .local_deb import main as local_main
+        except ImportError:
+            from local_deb import main as local_main
+        return local_main(Session())
     if sys.argv[1:] not in ([],['--apply'],['--selected'],['--clean'],['--system']): return 2
     mode=sys.argv[1] if sys.argv[1:] else '--check'
     apply=mode!='--check'
@@ -225,21 +212,21 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         tasks = [('APT', lambda: apt_update(s))] if apply else [('APT', lambda: s.command(['/usr/bin/apt', 'list', '--upgradable']))]
         if shutil.which('snap'): tasks.append(('Snap', lambda: snap_update(s,apply)))
-        if shutil.which('flatpak'):
+        if shutil.which('flatpak') and mode=='--apply':
             def flatpak():
                 if apply:
                     s.command(['/usr/bin/flatpak', 'update', '--system', '-y'])
                     if mode=='--apply': s.command(['/usr/bin/flatpak', 'uninstall', '--system', '--unused', '-y'])
                 else: s.command(['/usr/bin/flatpak', 'remote-ls', '--system', '--updates'])
             tasks.append(('Flatpak sistema', flatpak))
-        tasks.append(('FortiClient',lambda:forticlient(s,apply)))
+
         if shutil.which('ubuntu-drivers'): tasks.append(('Driver', lambda: drivers(s,apply)))
         if shutil.which('fwupdmgr'): tasks.append(('Firmware', lambda: firmware(s) if apply else s.command(['/usr/bin/fwupdmgr','get-updates'], accepted=(0,2))))
         try:
             from .packages import PACKAGES, update_package
         except ImportError:
             from packages import PACKAGES, update_package
-        tasks.extend((package, lambda p=package: update_package(s,p,apply)) for package in PACKAGES)
+        if apply:tasks.extend((package, lambda p=package: update_package(s,p,apply)) for package in PACKAGES)
         if mode=='--selected':
             tasks=[]
             if any(i.startswith('snap:') for i in selected): tasks.append(('Snap',lambda:snap_update(s,True,selected)))
@@ -251,6 +238,12 @@ def main():
         elif mode=='--system':
             tasks=[(name,action) for name,action in tasks if name not in PACKAGES and name!='Snap']
             tasks[0]=('APT',lambda:apt_update(s,clean_after=False))
+        if mode in ('--check','--selected') and shutil.which('flatpak'):
+            try:
+                from .flatpaks import process as flatpak_process
+            except ImportError:
+                from flatpaks import process as flatpak_process
+            tasks.append(('Flatpak system',lambda:flatpak_process(s,'system',selected)))
         for index,(category, action) in enumerate(tasks):
             s.checkpoint(); s.emit('stage',category=category,index=index,total=len(tasks))
             count = len(s.results)

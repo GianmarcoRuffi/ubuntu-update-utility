@@ -13,24 +13,26 @@ HOSTS = {'api.github.com', 'github.com', 'release-assets.githubusercontent.com',
          'downloads.apache.org', 'jmeter.apache.org', 'www.apachefriends.org'}
 
 
-def validate_url(url):
+def validate_url(url, allowed_hosts=None):
     parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme != 'https' or parsed.hostname not in HOSTS or parsed.username or parsed.password or parsed.port not in (None, 443):
+    if parsed.scheme != 'https' or parsed.hostname not in (allowed_hosts if allowed_hosts is not None else HOSTS) or parsed.username or parsed.password or parsed.port not in (None, 443):
         raise ValueError('Sorgente di download non consentita')
     return url
 
 
 class Redirect(urllib.request.HTTPRedirectHandler):
+    def __init__(self, allowed_hosts=None):
+        super().__init__(); self.allowed_hosts=allowed_hosts
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        validate_url(newurl)
+        validate_url(newurl,self.allowed_hosts)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def fetch(url, target=None, limit=8*1024*1024):
-    request = urllib.request.Request(validate_url(url), headers={'User-Agent': 'UbuntuUpdateUtility/1.0', 'Accept': 'application/json' if 'api.github.com' in url else '*/*'})
-    opener = urllib.request.build_opener(Redirect())
+def fetch(url, target=None, limit=8*1024*1024, allowed_hosts=None):
+    request = urllib.request.Request(validate_url(url,allowed_hosts), headers={'User-Agent': 'UbuntuUpdateUtility/1.0', 'Accept': 'application/json' if 'api.github.com' in url else '*/*'})
+    opener = urllib.request.build_opener(Redirect(allowed_hosts))
     with opener.open(request, timeout=30) as response:
-        validate_url(response.url)
+        validate_url(response.url,allowed_hosts)
         length = response.headers.get('Content-Length')
         if length and int(length) > limit: raise ValueError('Download oltre il limite previsto')
         if target:
@@ -51,12 +53,16 @@ def fetch(url, target=None, limit=8*1024*1024):
 def newer(candidate, installed):
     import subprocess
     if not candidate or not installed: return False
-    return subprocess.run(['/usr/bin/dpkg', '--compare-versions', candidate, 'gt', installed], capture_output=True).returncode == 0
+    result=subprocess.run(['/usr/bin/dpkg','--compare-versions',candidate,'gt',installed],capture_output=True)
+    if result.returncode not in (0,1):raise ValueError('Versioni non confrontabili')
+    return result.returncode==0
 
 
-def release(repository):
-    data = json.loads(fetch(f'https://api.github.com/repos/{repository}/releases/latest'))
-    if data.get('draft') or data.get('prerelease'): raise ValueError('Release stabile non disponibile')
+def release(repository, channel='stable'):
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repository): raise ValueError('Repository non valido')
+    endpoint='latest' if channel=='stable' else 'tags/'+urllib.parse.quote(channel,safe='')
+    data = json.loads(fetch(f'https://api.github.com/repos/{repository}/releases/{endpoint}'))
+    if data.get('draft') or channel=='stable' and data.get('prerelease'): raise ValueError('Release stabile non disponibile')
     return data
 
 

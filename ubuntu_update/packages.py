@@ -8,7 +8,11 @@ try:
 except ImportError:
     import sources
 
-PACKAGES = ('docker-desktop', 'dbeaver-ce', 'github-desktop', 'teams-for-linux')
+try:
+    from .catalog import DEBS
+except ImportError:
+    from catalog import DEBS
+PACKAGES = tuple(sorted(DEBS))
 
 
 def installed(package):
@@ -65,11 +69,12 @@ def update_package(s, package, apply):
         # Prevent dependency removals and any implicit upgrade of the VPN.
         args = ['/usr/bin/apt-get','-o','DPkg::Lock::Timeout=60','--no-remove']
         plan = subprocess.run(args+['-s','install',str(target)], capture_output=True,text=True)
-        if plan.returncode or re.search(r'^(?:Remv|Purg) |^Inst forticlient',plan.stdout,re.M):
+        if plan.returncode or re.search(r'^(?:Remv|Purg) ',plan.stdout,re.M):
             s.result(package,'intervento richiesto',plan.stdout+plan.stderr); return
         if not source['sha256'] and not s.confirm('Installare '+package+'?',
                 f"{version} → {candidate}\n{source['page']}\nIl produttore non fornisce un digest nell’indice usato. Download HTTPS verificato; confermare la fonte."):
             s.result(package,'saltato'); return
         s.command(args+['-y','-o','Dpkg::Options::=--force-confold','install',str(target)])
         if installed(package) != candidate: raise RuntimeError('Verifica della versione installata fallita')
+        s.emit('completed',id='deb:'+package)
         s.result(package,'aggiornato',candidate)

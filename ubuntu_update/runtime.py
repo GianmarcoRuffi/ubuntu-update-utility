@@ -15,6 +15,32 @@ class Session:
         print(json.dumps(dict(type=event_type, **data), ensure_ascii=False), file=self.stream, flush=True)
     def candidate(self, identifier, name, current, available, kind):
         self.emit('candidate',id=identifier,name=name,current=current,available=available,kind=kind)
+    def assistance(self, installation):
+        self.emit('assistance',installation=installation)
+        line=sys.stdin.readline(65537)
+        if not line: raise Cancelled()
+        if len(line)>65536: raise ValueError('Risposta troppo grande')
+        value=json.loads(line)
+        if not isinstance(value,dict): raise ValueError('Risposta non valida')
+        if value.get('cancel') is True: raise Cancelled()
+        return value
+    def child(self,args,payload):
+        with subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True) as process:
+            process.stdin.write(json.dumps(payload)+'\n');process.stdin.flush()
+            for line in process.stdout:
+                try: event=json.loads(line)
+                except ValueError:
+                    self.emit('log',text=line);continue
+                if not isinstance(event,dict): continue
+                kind=event.pop('type','log')
+                self.emit(kind,**event)
+                if kind=='result': self.results.append(dict(event))
+                # The UI talks to this worker; forward only protocol responses.
+                if kind in ('confirm','checkpoint'):
+                    response=sys.stdin.readline()
+                    if not response: response='{"cancel": true}\n'
+                    process.stdin.write(response);process.stdin.flush()
+            return process.wait()
     def confirm(self, title, detail):
         self.emit('confirm', title=title, detail=detail)
         response = sys.stdin.readline()

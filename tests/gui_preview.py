@@ -4,10 +4,14 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from ubuntu_update.app import Utility
 from gi.repository import GLib,Gtk,Graphene
-app=Utility()
+app=Utility(autostart=False)
 def populate():
     for identifier,name,current,available in [('archive:Postman','Postman','12.36.0','12.37.1'),('archive:Forge','Forge','2.0.15','2.0.16'),('snap:firefox','firefox','1','2')]:
         app.candidates[identifier]=dict(id=identifier,name=name,current=current,available=available,kind='Snap' if identifier.startswith('snap:') else 'Standalone')
+    from ubuntu_update.inventory import identify
+    for name,path in [('FortiClient','/opt/forticlient'),('Gpick','/usr/local/bin/gpick'),('XAMPP','/opt/lampp')]:
+        identifier=identify(path)
+        app.candidates[identifier]=dict(id=identifier,name=name,current='Non identificata',available='Procedura assistita',kind='Standalone',mode='assisted',path=path)
     app.populate();app.rows['archive:Postman'].set_active(True)
     app.status.set_text('Anteprima con dati di esempio · seleziona le app da aggiornare.')
     GLib.timeout_add(600,capture)

@@ -4,6 +4,10 @@ import datetime
 import json
 import os
 from pathlib import Path
+try:
+    from .paths import data_home,state_home,config_home,app_roots
+except ImportError:
+    from paths import data_home,state_home,config_home,app_roots
 import subprocess
 import threading
 
@@ -24,9 +28,9 @@ def build_commands(directory, action, selected):
         return [['/usr/bin/python3', str(directory / 'engine.py')], user]
     if action == 'selected':
         commands = []
-        if any(i.startswith(('snap:', 'deb:')) for i in selected):
+        if any(i.startswith(('snap:', 'deb:', 'flatpak-system:')) for i in selected):
             commands.append(root + ['--selected'])
-        if any(i.startswith('archive:') for i in selected):
+        if any(i.startswith(('archive:', 'install:', 'flatpak-user:')) for i in selected):
             commands.append(user + ['--selected'])
         return commands
     if action == 'clean':
@@ -39,13 +43,16 @@ def build_commands(directory, action, selected):
 
 
 def desktop_icon(candidate):
+    if candidate.get('icon'):
+        try:return Gio.Icon.new_for_string(candidate['icon'])
+        except Exception:pass
     name = candidate['name'].lower().replace('-ce', '').replace(' standalone', '')
     aliases = {'github-desktop': 'github desktop', 'teams-for-linux': 'teams', 'docker-desktop': 'docker'}
     needle = aliases.get(name, name).replace('-', ' ')
     for info in Gio.AppInfo.get_all():
         identifier = (info.get_id() or '').lower()
         display = info.get_display_name().lower().replace('-', ' ')
-        if needle in display or (candidate['kind'] == 'Snap' and identifier.startswith(name + '_')):
+        if needle in display or identifier==name+'.desktop' or (candidate['kind'] == 'Snap' and identifier.startswith(name + '_')):
             icon = info.get_icon()
             if icon:
                 return icon
@@ -53,7 +60,8 @@ def desktop_icon(candidate):
 
 
 class Utility(Adw.Application):
-    def __init__(self):
+    def __init__(self, autostart=True):
+        self.autostart=autostart
         super().__init__(application_id=ICON)
         self.cancelled = False
         self.running = False
@@ -63,6 +71,7 @@ class Utility(Adw.Application):
         self.reboot = False
         self.action = 'scan'
         self.last_summary = None
+        self.completed = set()
 
     def do_activate(self):
         if hasattr(self, 'win'):
@@ -101,7 +110,7 @@ class Utility(Adw.Application):
         self.check = Gtk.Button(label='Cerca aggiornamenti')
         self.check.connect('clicked', lambda _: self.start(action='scan'))
         left.append(self.check)
-        hint = Gtk.Label(label='Standalone e Snap · gli aggiornamenti APT sono separati', wrap=True, xalign=0)
+        hint = Gtk.Label(label='Standalone, Snap e Flatpak · APT separato', wrap=True, xalign=0)
         hint.add_css_class('dim-label')
         left.append(hint)
         self.all_check = Gtk.CheckButton(label='Seleziona tutte')
@@ -109,6 +118,14 @@ class Utility(Adw.Application):
         left.append(self.all_check)
         self.app_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.app_list.add_css_class('boxed-list')
+        def group_header(row,before):
+            assisted=getattr(row,'assisted',False)
+            if before is None or assisted!=getattr(before,'assisted',False):
+                label=Gtk.Label(label='Da verificare / aggiornamento assistito' if assisted else 'Aggiornamenti disponibili',xalign=0)
+                label.set_margin_top(12);label.set_margin_bottom(8);label.add_css_class('heading')
+                row.set_header(label)
+            else:row.set_header(None)
+        self.app_list.set_header_func(group_header)
         self.empty = Gtk.Label(label='Esegui la ricerca per vedere le applicazioni.', wrap=True)
         self.app_list.set_placeholder(self.empty)
         scroll = Gtk.ScrolledWindow(vexpand=True, min_content_width=330)
@@ -122,7 +139,7 @@ class Utility(Adw.Application):
         right = self.panel('Operazioni')
         actions = Gtk.Box(spacing=8)
         self.system = Gtk.Button(label='Aggiorna sistema')
-        self.system.set_tooltip_text('APT, Flatpak, driver e firmware; conferme dedicate per le operazioni delicate.')
+        self.system.set_tooltip_text('APT, driver e firmware; conferme dedicate per le operazioni delicate.')
         self.system.connect('clicked', lambda _: self.start(action='system'))
         self.clean = Gtk.Button(label='Pulisci')
         self.clean.set_tooltip_text('Cache APT, autoremove con purge, vecchie revisioni Snap e runtime inutilizzati. Conserva dati e copie di recupero.')
@@ -152,6 +169,7 @@ class Utility(Adw.Application):
         self.win.set_content(box)
         self.update_controls()
         self.win.present()
+        if self.autostart: GLib.idle_add(lambda: self.start(action='scan'))
 
     def panel(self, title):
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -163,15 +181,21 @@ class Utility(Adw.Application):
         return panel
 
     def populate(self):
-        child = self.app_list.get_first_child()
-        while child:
-            following = child.get_next_sibling()
-            self.app_list.remove(child)
-            child = following
+        while (row:=self.app_list.get_row_at_index(0)) is not None:
+            self.app_list.remove(row)
         self.rows.clear()
         self.all_check.set_active(False)
-        for identifier, candidate in sorted(self.candidates.items(), key=lambda item: item[1]['name'].lower()):
-            row = Adw.ActionRow(title=candidate['name'], subtitle=f"{candidate['kind']} · {candidate['current']} → {candidate['available']}")
+        for identifier, candidate in sorted(self.candidates.items(), key=lambda item: (item[1].get('mode')=='assisted',item[1]['name'].lower())):
+            mode='Assistita' if candidate.get('mode')=='assisted' else 'Automatica'
+            title=candidate['name']
+            if candidate['kind'].startswith('Flatpak'):
+                info=Gio.DesktopAppInfo.new(candidate['name']+'.desktop')
+                if info:title=info.get_display_name()
+            subtitle=(f"{candidate['kind']} · Assistita · {candidate['current']} · Da verificare" if candidate.get('mode')=='assisted' else f"{candidate['kind']} · {mode} · {candidate['current']} → {candidate['available']}")
+            row = Adw.ActionRow(title=title,subtitle=subtitle)
+            row.set_use_markup(False)
+            row.assisted=candidate.get('mode')=='assisted'
+            row.set_tooltip_text(candidate.get('path',candidate['name']))
             image = Gtk.Image.new_from_gicon(desktop_icon(candidate))
             image.set_pixel_size(32)
             row.add_prefix(image)
@@ -245,6 +269,20 @@ class Utility(Adw.Application):
         kind = event.get('type')
         if kind == 'candidate' and self.action == 'scan':
             self.candidates[event['id']] = event
+        elif kind == 'completed':
+            self.completed.add(event['id'])
+        elif kind == 'assistance':
+            if self.cancelled:
+                self.reply(process,{'cancel':True});return
+            try:
+                from .assistance_ui import present
+            except ImportError:
+                from assistance_ui import present
+            def assisted_reply(value):
+                if value.get('cancel') is True:
+                    self.cancelled=True;self.update_controls()
+                self.reply(process,value)
+            self.assistance_dialog=present(self.win,event['installation'],assisted_reply)
         elif kind == 'log':
             self.append(event['text'])
         elif kind == 'stage':
@@ -254,12 +292,18 @@ class Utility(Adw.Application):
         elif kind == 'checkpoint':
             self.reply(process, {'cancel': True} if self.cancelled else {'continue': True})
         elif kind == 'confirm':
+            if self.cancelled:
+                self.reply(process,{'cancel':True});return
             dialog = self.details_dialog(event['title'], event['detail'])
             dialog.add_response('no', 'Salta')
             dialog.add_response('yes', 'Conferma')
+            dialog.add_response('cancel','Annulla operazione')
             dialog.set_default_response('no')
             dialog.set_close_response('no')
-            dialog.connect('response', lambda _, response: self.reply(process, {'cancel': True} if self.cancelled else {'approve': response == 'yes'}))
+            def confirmed(_,response):
+                if response=='cancel':self.cancelled=True;self.update_controls()
+                self.reply(process,{'cancel':True} if self.cancelled else {'approve':response=='yes'})
+            dialog.connect('response',confirmed)
             dialog.present()
         elif kind == 'result':
             self.outcomes.append(event)
@@ -281,6 +325,7 @@ class Utility(Adw.Application):
         self.cancelled = False
         self.reboot = False
         self.outcomes = []
+        self.completed = set()
         self.last_summary = None
         if action == 'scan':
             self.candidates = {}
@@ -295,7 +340,7 @@ class Utility(Adw.Application):
 
         def work():
             try:
-                state = Path.home() / '.local/state/ubuntu-update-utility'
+                state = state_home() / 'ubuntu-update-utility'
                 state.mkdir(parents=True, exist_ok=True)
                 logpath = state / (datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.jsonl')
                 with open(logpath, 'x') as log:
@@ -337,13 +382,11 @@ class Utility(Adw.Application):
         failed = any(item['status'] == 'errore' for item in self.outcomes)
         if self.action == 'scan':
             self.populate()
-            self.status.set_text(f'Ricerca terminata: {len(self.rows)} aggiornamenti disponibili.' + (' Alcune verifiche sono fallite: vedi i dettagli.' if failed else ''))
+            self.status.set_text(f"Ricerca terminata: {sum(c.get('mode')!='assisted' for c in self.candidates.values())} aggiornamenti, {sum(c.get('mode')=='assisted' for c in self.candidates.values())} verifiche assistite." + (' Alcune verifiche sono fallite: vedi i dettagli.' if failed else ''))
         else:
             if self.action == 'selected':
-                successful = {item['category'].removeprefix('Snap: ') for item in self.outcomes if item['status'] == 'aggiornato'}
-                for identifier in list(self.candidates):
-                    if self.candidates[identifier]['name'] in successful:
-                        del self.candidates[identifier]
+                for identifier in self.completed:
+                    self.candidates.pop(identifier,None)
                 self.populate()
             self.status.set_text('Autenticazione annullata o non disponibile.' if any(i['category'] == 'Autenticazione' for i in self.outcomes) else 'Operazione terminata: consulta il riepilogo.')
             self.show_summary()
