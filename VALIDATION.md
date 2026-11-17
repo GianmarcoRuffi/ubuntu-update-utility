@@ -9,7 +9,7 @@ aggiornamento del PC non sono state avviate.
 | Avvio dal menu e desktop, pacchetto installabile | launcher nel DEB; `desktop-shortcut.py`; validazione desktop entry e contenuti pacchetto; installazione e rimozione reali in una root dpkg isolata |
 | Password di sistema e helper root | helper Python in modalità isolata, percorso fisso; policy Polkit `auth_admin`; proprietà root e permessi controllati nel DEB |
 | APT, configurazioni e blocchi | simulazione upgrade, attesa lock, rispetto hold, `--force-confold`; test errore APT e mancata pulizia dopo fallimento |
-| Autoremove/purge/autoclean | anteprima e conferma; kernel in uso e riserva protetti; test rifiuto, kernel vecchi e metapacchetti |
+| Autoremove/purge/clean | anteprima e conferma; kernel in uso e riserva protetti; test rifiuto, kernel vecchi e metapacchetti |
 | Snap e recupero | refresh dei soli snap non sospesi; test hold globale e individuale; eliminazione delle revisioni obsolete conservandone una |
 | Flatpak utente e sistema | fasi separate con cleanup `--unused`, senza `--delete-data`; controllo reale di sola lettura |
 | Driver e firmware | rilevamento Ubuntu e fwupd, conferme dedicate, nessun riavvio automatico; test rifiuto firmware |
@@ -48,3 +48,24 @@ senza sostituire un’installazione che non sia stata verificata.
 Per XAMPP la pagina ufficiale attuale non espone un installer Linux identificabile;
 Gpick è una compilazione personalizzata. Entrambi seguono il percorso manuale
 previsto dal piano. FortiClient non ha un repository configurato su questo PC.
+
+## Revisione 0.4.0 — selezione e pulizia separate
+
+- Pannelli affiancati con divisore verticale; la lista appare dopo la scansione
+  completa e contiene soltanto aggiornamenti standalone e Snap selezionabili.
+- Icone delle applicazioni installate e checkbox con selezione multipla. La lista
+  selezionata è validata da entrambi i worker: test su identificatori non validi,
+  selezione vuota, esclusione delle app non selezionate e assenza di APT nel flusso
+  selettivo.
+- Pulsante Pulisci indipendente: test che nessun aggiornamento sia avviato,
+  protezione dei backup e dei file estranei, rimozione dei soli installer temporanei
+  dell’utility con proprietà e permessi attesi.
+- Riepilogo finale unico per tutte le fasi: il test grafico verifica successi,
+  fallimenti e autenticazione annullata; nessuna finestra prematura fra i worker.
+- Icona SVG dedicata in hicolor, desktop ID corrispondente all’application ID e
+  metadati AppStream inclusi nel DEB. L’icona nella barra è verificata dal test
+  grafico. Il progetto locale non ha una homepage pubblica: il validatore
+  AppStream segnala il relativo avviso, senza errori nei metadati.
+- Anteprima nativa con dati di esempio: `python3 tests/gui_preview.py` produce
+  `dist/preview.png`. La scansione reale è stata ripetuta senza installazioni né
+  pulizie sul PC.

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+ <id>it.local.UbuntuUpdateUtility</id>
+ <metadata_license>CC0-1.0</metadata_license>
+ <name>Ubuntu Update Utility</name>
+ <summary>Aggiornamenti selettivi e pulizia del sistema Ubuntu</summary>
+ <description><p>Seleziona le applicazioni standalone e Snap da aggiornare, esegui la pulizia dei pacchetti inutilizzati e consulta il riepilogo finale.</p></description>
+ <launchable type="desktop-id">it.local.UbuntuUpdateUtility.desktop</launchable>
+ <icon type="stock">it.local.UbuntuUpdateUtility</icon>
+ <developer id="local.utility"><name>Progetto locale</name></developer>
+ <content_rating type="oars-1.1"/>
+ <categories><category>System</category></categories>
+ <releases><release version="0.4.0" date="2026-11-17"/></releases>
+</component>

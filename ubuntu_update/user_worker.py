@@ -67,10 +67,32 @@ def restore(s, home):
             s.result(current.name,'ripristinato')
 
 
+def clean_user(s,home):
+    if shutil.which('flatpak'):
+        s.command(['/usr/bin/flatpak','uninstall','--user','--unused','-y'])
+    removed=0
+    base=home/'.local/share/ubuntu-update-utility/apps'
+    # Only abandoned staging folders owned by this utility; never backups.
+    for path in base.glob('.staging-*'):
+        if path.is_dir() and not path.is_symlink(): shutil.rmtree(path); removed+=1
+    cache=home/'.cache/ubuntu-update-utility'
+    if cache.is_dir() and not cache.is_symlink(): shutil.rmtree(cache); removed+=1
+    s.result('Pulizia utente','pulito',f'{removed} directory temporanee/cache eliminate. Copie di recupero conservate.')
+
+
 def main():
-    if sys.argv[1:] not in ([],['--apply'],['--restore']): return 2
+    if sys.argv[1:] not in ([],['--apply'],['--restore'],['--selected'],['--clean'],['--system']): return 2
     if os.geteuid()==0: return 1
-    apply=sys.argv[1:]==['--apply']; restoring=sys.argv[1:]==['--restore']
+    mode=sys.argv[1] if sys.argv[1:] else '--check'
+    apply=mode in ('--apply','--selected','--system'); restoring=mode=='--restore'
+    selected=None
+    if mode=='--selected':
+        try:
+            from .selection import read_selection
+        except ImportError:
+            from selection import read_selection
+        try: selected=read_selection()
+        except (ValueError,TypeError): return 2
     home=Path.home(); s=Session()
     state=home/'.local/state/ubuntu-update-utility'; state.mkdir(parents=True,exist_ok=True)
     with open(state/'user.lock','w') as lock:
@@ -81,16 +103,20 @@ def main():
                 if not s.results: s.result('Recupero','nessun aggiornamento','Nessuna versione precedente disponibile.')
             else:
                 tasks=[]
-                if shutil.which('flatpak'):
+                if shutil.which('flatpak') and mode!='--selected':
                     def flatpak():
                         if apply:
                             s.command(['/usr/bin/flatpak','update','--user','-y'])
-                            s.command(['/usr/bin/flatpak','uninstall','--user','--unused','-y'])
+                            if mode=='--apply': s.command(['/usr/bin/flatpak','uninstall','--user','--unused','-y'])
                         else: s.command(['/usr/bin/flatpak','remote-ls','--user','--updates'])
                         s.result('Flatpak utente','aggiornato' if apply else 'controllato')
                     tasks.append(('Flatpak utente',flatpak))
-                for item in discover(home): tasks.append((item['name'],lambda i=item:update(s,i,apply,home)))
-                tasks.extend([('XAMPP',lambda:special_apps(s,home,'XAMPP')),('Gpick',lambda:special_apps(s,home,'Gpick')),('Inventario',lambda:inventory(s,home))])
+                if mode not in ('--clean','--system'):
+                    for item in discover(home):
+                        if selected is None or 'archive:'+item['name'] in selected:
+                            tasks.append((item['name'],lambda i=item:update(s,i,apply,home)))
+                if mode in ('--check','--apply'): tasks.extend([('XAMPP',lambda:special_apps(s,home,'XAMPP')),('Gpick',lambda:special_apps(s,home,'Gpick')),('Inventario',lambda:inventory(s,home))])
+                if mode=='--clean': tasks=[('Pulizia utente',lambda:clean_user(s,home))]
                 for index,(name, action) in enumerate(tasks):
                     s.checkpoint(); s.emit('stage',category=name,index=index,total=len(tasks))
                     try: action()

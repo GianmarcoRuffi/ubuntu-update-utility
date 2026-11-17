@@ -24,7 +24,7 @@ class Workflows(unittest.TestCase):
         s.command=command
         with tempfile.TemporaryDirectory() as temp,patch('ubuntu_update.engine.capture',return_value='Inst curl (1)'),patch('ubuntu_update.engine.tempfile.TemporaryDirectory',return_value=tempfile.TemporaryDirectory(dir=temp)):
             with self.assertRaises(RuntimeError):engine.apt_update(s)
-        self.assertFalse(any('autoclean' in cmd or 'autoremove' in cmd for cmd in s.commands))
+        self.assertFalse(any('autoclean' in cmd or 'clean' in cmd or 'autoremove' in cmd for cmd in s.commands))
     def test_cleanup_confirmation_rejected(self):
         s=FakeSession(False)
         with tempfile.TemporaryDirectory() as temp,patch('ubuntu_update.engine.kernel_versions_to_keep',return_value={'6.17.0-1-generic'}),patch('ubuntu_update.engine.capture',side_effect=['Inst curl (1)','Remv libunused (1)']),patch('ubuntu_update.engine.tempfile.TemporaryDirectory',return_value=tempfile.TemporaryDirectory(dir=temp)):
@@ -90,5 +90,7 @@ class SnapPolicies(unittest.TestCase):
             engine.snap_update(s,True)
         self.assertIn(['/usr/bin/snap','refresh','normal-app'],s.commands)
         self.assertNotIn(['/usr/bin/snap','refresh','held-app'],s.commands)
+        with patch('ubuntu_update.engine.capture',return_value='Name Version Rev Tracking Publisher Notes\nnormal-app 0 1 latest/stable vendor disabled\nnormal-app 1 2 latest/stable vendor disabled\nnormal-app 2 3 latest/stable vendor -\n'):
+            engine.snap_cleanup(s,{'normal-app'})
         self.assertIn(['/usr/bin/snap','remove','normal-app','--revision=1'],s.commands)
         self.assertNotIn(['/usr/bin/snap','remove','normal-app','--revision=2'],s.commands)

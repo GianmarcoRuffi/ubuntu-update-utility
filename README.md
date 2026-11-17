@@ -5,17 +5,33 @@ Utility desktop in italiano per Ubuntu 26.04, Python 3, GTK4 e Libadwaita.
 ## Installazione e avvio
 
 Costruire con `sh packaging/build.sh`. Installare il pacchetto prodotto in `dist`
-con un doppio clic oppure `sudo apt install ./dist/ubuntu-update-utility_0.3.0_all.deb`.
+con un doppio clic oppure `sudo apt install ./dist/ubuntu-update-utility_0.4.0_all.deb`.
 Aprire **Ubuntu Update Utility** dal menu applicazioni. Per il collegamento sul
 Desktop eseguire `python3 packaging/desktop-shortcut.py` dopo l’installazione;
 il desktop potrebbe richiedere di scegliere **Consenti avvio** al primo clic.
 
-**Controlla aggiornamenti** non installa pacchetti; consulta gli indici locali APT
-e gli indici online dei produttori. **Aggiorna tutto** richiede l’autenticazione
-Polkit e aggiorna prima il sistema, poi le applicazioni dell’utente.
-Le rimozioni APT, i nuovi driver, il firmware e FortiClient richiedono conferma.
-**Annulla dopo l’operazione** attende la conclusione dell’installazione corrente.
-Non viene eseguito alcun riavvio automatico.
+**Cerca aggiornamenti** individua le nuove versioni. Al termine, il pannello a
+sinistra mostra le app standalone e Snap con icona e checkbox: selezionare quelle
+desiderate e premere **Aggiorna selezionate**. Le app non selezionate vengono
+escluse anche dai motori di aggiornamento. Le versioni vengono ricontrollate prima
+di installarle.
+
+Il pannello a destra contiene le operazioni e il registro. **Aggiorna sistema**
+gestisce separatamente APT, Flatpak, driver e firmware. **Pulisci** esegue la
+pulizia della cache dei pacchetti APT, `autoremove --purge` con anteprima e conferma,
+la rimozione delle revisioni Snap obsolete (conservandone una precedente), dei
+runtime Flatpak inutilizzati e dei temporanei/cache dell’utility. Non aggiorna
+applicazioni e non cancella Download, dati personali o copie di recupero.
+
+L’autenticazione è gestita da Polkit. FortiClient, rimozioni, nuovi driver e firmware
+mantengono le conferme dedicate. **Annulla dopo l’operazione** attende la conclusione
+dell’installazione corrente. Al termine di aggiornamenti, pulizia o ripristino una
+finestra riepiloga operazioni riuscite, fallite e da completare, comprese entrambe
+le fasi di sistema e utente. Non viene eseguito alcun riavvio automatico.
+
+Il pacchetto include l’icona dedicata nel tema hicolor e i metadati AppStream per
+i gestori software che li supportano. La stessa icona compare nella barra della
+finestra e nel menu applicazioni.
 
 ## Applicazioni e recupero
 

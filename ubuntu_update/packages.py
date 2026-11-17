@@ -44,6 +44,7 @@ def update_package(s, package, apply):
     if source['version'] and not sources.newer(source['version'], version):
         s.result(package, 'nessun aggiornamento', version); return
     if not apply:
+        s.candidate('deb:'+package,package,version,source['version'],'Standalone')
         s.result(package, 'aggiornamento disponibile' if source['version'] else 'verifica pacchetto richiesta',
                  f"{version} → {source['version'] or 'ultima versione del produttore'}\n{source['page']}"); return
     if app_running(package):

@@ -11,8 +11,10 @@ class Session:
     def __init__(self, stream=None):
         self.stream = stream or sys.stdout
         self.results = []
-    def emit(self, kind, **data):
-        print(json.dumps(dict(type=kind, **data), ensure_ascii=False), file=self.stream, flush=True)
+    def emit(self, event_type, **data):
+        print(json.dumps(dict(type=event_type, **data), ensure_ascii=False), file=self.stream, flush=True)
+    def candidate(self, identifier, name, current, available, kind):
+        self.emit('candidate',id=identifier,name=name,current=current,available=available,kind=kind)
     def confirm(self, title, detail):
         self.emit('confirm', title=title, detail=detail)
         response = sys.stdin.readline()

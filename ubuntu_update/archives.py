@@ -113,6 +113,7 @@ def update(s, item, apply, home):
     if source['version'] and not sources.newer(source['version'],item['version']):
         s.result(name,'nessun aggiornamento',str(item['version'])); return
     if not apply:
+        s.candidate('archive:'+name,name,item['version'],source['version'],'Standalone')
         s.result(name,'aggiornamento disponibile' if source['version'] else 'verifica archivio richiesta',
                  f"{item['version']} → {source['version'] or 'ultima versione del produttore'}\n{source['page']}"); return
     if running_under(old):

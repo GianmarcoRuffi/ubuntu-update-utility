@@ -55,7 +55,7 @@ def cleanup_plan(output, keep_kernels=None):
     return removed,forbidden
 
 
-def apt_update(s):
+def apt_update(s,clean_after=True):
     with tempfile.TemporaryDirectory(prefix='ubuntu-update-', dir='/run') as directory:
         prefs = Path(directory)/'preferences'
         original = Path('/etc/apt/preferences')
@@ -68,16 +68,21 @@ def apt_update(s):
             s.result('APT', 'intervento richiesto', plan); return
         s.command(base+['-y', '--with-new-pkgs', '-o', 'Dpkg::Options::=--force-confold', 'upgrade'])
         s.result('APT', 'aggiornato')
-        plan = capture(base+['-s', 'autoremove', '--purge'])
-        removed, forbidden = cleanup_plan(plan,kernel_versions_to_keep())
-        if forbidden:
-            s.result('Pulizia APT', 'intervento richiesto', 'Proposta contenente kernel o pacchetti protetti.\n'+plan)
-        elif removed and s.confirm('Rimuovere i pacchetti inutilizzati?', plan):
-            # apt-get itself refuses essential removals without an additional flag.
-            s.command(base+['-y', 'autoremove', '--purge'])
-            s.result('Pulizia APT', 'aggiornato')
-        else: s.result('Pulizia APT', 'saltato' if removed else 'nessun aggiornamento')
-        s.command(base+['autoclean'])
+        if clean_after: apt_cleanup(s,base)
+
+def apt_cleanup(s,base=None):
+    base=base or ['/usr/bin/apt-get','-o','DPkg::Lock::Timeout=60']
+    plan = capture(base+['-s', 'autoremove', '--purge'])
+    removed, forbidden = cleanup_plan(plan,kernel_versions_to_keep())
+    if forbidden:
+        s.result('Pulizia APT', 'intervento richiesto', 'Proposta contenente kernel o pacchetti protetti.\n'+plan)
+    elif removed and s.confirm('Rimuovere i pacchetti inutilizzati?', plan):
+        # apt-get itself refuses essential removals without an additional flag.
+        s.command(base+['-y', 'autoremove', '--purge'])
+        s.result('Pulizia APT', 'aggiornato')
+    else: s.result('Pulizia APT', 'saltato' if removed else 'nessun aggiornamento')
+    s.command(base+['clean'])
+    s.result('Cache APT','pulito','Cache dei pacchetti di installazione eliminata.')
 
 
 def drivers(s, apply=True):
@@ -131,9 +136,18 @@ def forticlient(s, apply):
     else: s.result('FortiClient','saltato')
 
 
-def snap_update(s, apply):
+def snap_update(s, apply, selected=None):
     if not apply:
-        s.command(['/usr/bin/snap','refresh','--list']); return
+        output=capture(['/usr/bin/snap','refresh','--list'])
+        listing=capture(['/usr/bin/snap','list'])
+        current={fields[0]:fields[1] for line in listing.splitlines()[1:] if len(fields:=line.split())>=2}
+        held={fields[0] for line in listing.splitlines()[1:] if len(fields:=line.split())>=6 and 'held' in fields[-1]}
+        for line in output.splitlines()[1:]:
+            fields=line.split()
+            if len(fields)<3 or fields[0] in held or not re.fullmatch(r'[a-z0-9][a-z0-9-]*',fields[0]): continue
+            s.candidate('snap:'+fields[0],fields[0],current.get(fields[0],''),fields[1],'Snap')
+        s.emit('log',text=output)
+        return
     import datetime
     hold=subprocess.run(['/usr/bin/snap','get','system','refresh.hold'],capture_output=True,text=True)
     value=hold.stdout.strip()
@@ -156,13 +170,18 @@ def snap_update(s, apply):
     output=capture(['/usr/bin/snap','refresh','--list'])
     lines=output.splitlines()[1:]
     packages=[line.split()[0] for line in lines if line.split() and line.split()[0] not in blocked and 'held' not in line.split()[-1]]
+    if selected is not None: packages=[p for p in packages if 'snap:'+p in selected]
     if not packages:
         s.result('Snap','nessun aggiornamento'); return
     for package in packages:
         if not re.fullmatch(r'[a-z0-9][a-z0-9-]*',package): continue
         s.checkpoint(); s.command(['/usr/bin/snap','refresh',package])
         s.result('Snap: '+package,'aggiornato')
+    s.result('Snap','aggiornato')
+
+def snap_cleanup(s,packages=None):
     revisions=capture(['/usr/bin/snap','list','--all'])
+    if packages is None: packages={line.split()[0] for line in revisions.splitlines()[1:] if line.split()}
     for package in packages:
         disabled=[]
         for line in revisions.splitlines()[1:]:
@@ -170,12 +189,33 @@ def snap_update(s, apply):
             if len(fields)>=6 and fields[0]==package and 'disabled' in fields[-1] and fields[2].isdigit(): disabled.append(int(fields[2]))
         for revision in sorted(disabled)[:-1]:
             s.command(['/usr/bin/snap','remove',package,'--revision='+str(revision)])
-    s.result('Snap','aggiornato','Conservata una revisione precedente per ogni app aggiornata.')
+    s.result('Pulizia Snap','pulito','Conservata una revisione precedente per ogni app aggiornata.')
+
+
+def installer_cleanup(s, locations=None):
+    locations=locations or [(Path('/var/tmp'),'ubuntu-update-deb-'),(Path('/run'),'ubuntu-update-')]
+    removed=0
+    for folder,prefix in locations:
+        for path in folder.glob(prefix+'*'):
+            if not re.fullmatch(re.escape(prefix)+r'[a-z0-9_]{8}',path.name): continue
+            info=path.lstat()
+            if path.is_symlink() or not path.is_dir() or info.st_uid!=0 or info.st_mode & 0o022: continue
+            shutil.rmtree(path); removed+=1
+    s.result('Installer temporanei','pulito',f'{removed} directory di installazione abbandonate eliminate.')
 
 
 def main():
-    if sys.argv[1:] not in ([], ['--apply']): return 2
-    apply = bool(sys.argv[1:])
+    if sys.argv[1:] not in ([],['--apply'],['--selected'],['--clean'],['--system']): return 2
+    mode=sys.argv[1] if sys.argv[1:] else '--check'
+    apply=mode!='--check'
+    selected=None
+    if mode=='--selected':
+        try:
+            from selection import read_selection
+        except ImportError:
+            from .selection import read_selection
+        try: selected=read_selection()
+        except (ValueError,TypeError): return 2
     if apply and os.geteuid() != 0: return 1
     s = Session()
     lock = None
@@ -189,7 +229,7 @@ def main():
             def flatpak():
                 if apply:
                     s.command(['/usr/bin/flatpak', 'update', '--system', '-y'])
-                    s.command(['/usr/bin/flatpak', 'uninstall', '--system', '--unused', '-y'])
+                    if mode=='--apply': s.command(['/usr/bin/flatpak', 'uninstall', '--system', '--unused', '-y'])
                 else: s.command(['/usr/bin/flatpak', 'remote-ls', '--system', '--updates'])
             tasks.append(('Flatpak sistema', flatpak))
         tasks.append(('FortiClient',lambda:forticlient(s,apply)))
@@ -200,12 +240,23 @@ def main():
         except ImportError:
             from packages import PACKAGES, update_package
         tasks.extend((package, lambda p=package: update_package(s,p,apply)) for package in PACKAGES)
+        if mode=='--selected':
+            tasks=[]
+            if any(i.startswith('snap:') for i in selected): tasks.append(('Snap',lambda:snap_update(s,True,selected)))
+            tasks.extend((p,lambda p=p:update_package(s,p,True)) for p in PACKAGES if 'deb:'+p in selected)
+        elif mode=='--clean':
+            tasks=[('Pulizia APT',lambda:apt_cleanup(s)),('Installer temporanei',lambda:installer_cleanup(s))]
+            if shutil.which('snap'): tasks.append(('Pulizia Snap',lambda:snap_cleanup(s)))
+            if shutil.which('flatpak'): tasks.append(('Pulizia Flatpak',lambda:s.command(['/usr/bin/flatpak','uninstall','--system','--unused','-y'])))
+        elif mode=='--system':
+            tasks=[(name,action) for name,action in tasks if name not in PACKAGES and name!='Snap']
+            tasks[0]=('APT',lambda:apt_update(s,clean_after=False))
         for index,(category, action) in enumerate(tasks):
             s.checkpoint(); s.emit('stage',category=category,index=index,total=len(tasks))
             count = len(s.results)
             try:
                 action()
-                if count == len(s.results): s.result(category, 'aggiornato' if apply else 'controllato')
+                if count == len(s.results): s.result(category, 'pulito' if mode=='--clean' else 'aggiornato' if apply else 'controllato')
             except Cancelled: raise
             except Exception as error: s.result(category, 'errore', str(error))
         s.emit('summary', results=s.results, reboot=Path('/var/run/reboot-required').exists())
