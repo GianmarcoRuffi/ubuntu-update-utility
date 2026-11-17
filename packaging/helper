@@ -1,0 +1,5 @@
+#!/usr/bin/python3 -I
+import sys
+sys.path.insert(0, '/usr/lib/ubuntu-update-utility')
+from engine import main
+sys.exit(main())
