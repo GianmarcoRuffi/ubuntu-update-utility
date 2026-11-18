@@ -36,6 +36,9 @@ Il pannello sinistro distingue:
   quelle senza una versione confrontabile, una fonte nota o un aggiornamento
   automatizzabile. La presenza qui non afferma che esista una versione nuova.
 
+Le fonti DEB che pubblicano solo un tag o un link compaiono nel gruppo Da verificare.
+L’utility legge la versione Debian completa dal file dopo la selezione.
+
 Le checkbox partono deselezionate. **Aggiorna selezionate** interviene soltanto
 sulle installazioni scelte. Non esistono esclusioni personali per FortiClient,
 Gpick, XAMPP o altri nomi. Fonti, versioni e disponibilità vengono ricontrollate

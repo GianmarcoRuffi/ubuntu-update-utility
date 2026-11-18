@@ -127,3 +127,14 @@ verificati proprietà e completezza del DEB, installazione/rimozione isolata,
 lock amministrativo e inoltro delle richieste DEB assistite. Controllati anche
 percorsi XDG personalizzati e recupero dai percorsi delle vecchie versioni.
 Nessun aggiornamento o pulizia del PC reale è stato avviato da queste verifiche.
+
+## Correzioni dopo la review 0.5.1
+
+La pulizia APT mostra le rimozioni della transazione effettiva prima di invocare
+dpkg. Il test `tests/apt_cleanup_sandbox.py` richiede una root isolata con APT e
+dpkg privati e verifica anche il lock durante la conferma.
+
+La versione Debian completa viene letta dopo la selezione. Il ripristino
+conserva gli argomenti dei launcher quando cambia l’eseguibile. I backup
+AppImage 0.5.1 possono essere recuperati quando l’inventario identifica il file
+e la copia adiacente supera le verifiche.

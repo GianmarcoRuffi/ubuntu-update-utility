@@ -189,7 +189,7 @@ def update(s, item, apply, home):
                 raise OSError('Spazio insufficiente per conservare la versione precedente')
             if previous.exists(): raise ValueError('Copia di recupero inattesa: verificare manualmente')
             shutil.copytree(original,previous,symlinks=True)
-            (previous/'utility-version.json').write_text(json.dumps(dict(name=name,version=item['version'])))
+            (previous/'utility-version.json').write_text(json.dumps(dict(name=name,version=item['version'],provider='builtin',entrypoint=str(relative),original_id=item.get('id',''))))
             # activate() replaces existing backups only when target exists.
             staged.rename(target)
         else:

@@ -55,6 +55,25 @@ class GenericSources(unittest.TestCase):
             for record in ({'command':'reboot'},{'homepage':'file:///etc/passwd'},{'homepage':'https://user:password@vendor.example/'},{'provider':'shell'}):
                 with self.subTest(record=record),self.assertRaises(ValueError):profiles.save(identify('/app'),record,Path(temp))
 
+class AppImageLifecycle(unittest.TestCase):
+    def test_versioned_update_keeps_recovery_profile(self):
+        from ubuntu_update.user_worker import restore
+        with tempfile.TemporaryDirectory() as temp:
+            home=Path(temp)
+            path=home/'Example.AppImage'
+            path.write_bytes(image())
+            item=Installation(identify(path),'Example',str(path),version='1.0',root=str(path))
+            source=dict(format='appimage',name=path.name,url='https://vendor.example/app',page='https://vendor.example/',version='2.0')
+            with (patch.object(providers,'check',return_value=providers.Check(source,available=True)),
+                  patch('ubuntu_update.archives.running_under',return_value=False),
+                  patch('subprocess.check_output',return_value='amd64'),
+                  patch('ubuntu_update.sources.fetch',side_effect=lambda url,target,**kw:target.write_bytes(image(b'new')))):
+                standalone.process(FakeSession(),item,True,home)
+                restore(FakeSession(),home)
+                self.assertEqual(path.read_bytes(),image())
+                self.assertEqual(profiles.load(home)[item.id]['version'],'1.0')
+
+
 class GenericInstallation(unittest.TestCase):
     def test_appimage_updates_in_place_with_recovery(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -76,18 +95,23 @@ class GenericInstallation(unittest.TestCase):
             self.assertEqual(path.read_bytes(),image());self.assertFalse(path.with_name(path.name+'.previous').exists())
     def test_generic_archive_preserves_launcher_arguments(self):
         with tempfile.TemporaryDirectory() as temp:
-            home=Path(temp);old=home/'old';(old/'bin').mkdir(parents=True);(old/'bin/example').write_text('old')
-            desktop=home/'example.desktop';desktop.write_text('[Desktop Entry]\nName=Example\nExec="'+str(old/'bin/example')+'" --profile "My Profile" %U\n')
+            home=Path(temp);old=home/'old';(old/'bin').mkdir(parents=True);(old/'bin/legacy').write_text('old');(old/'bin/legacy').chmod(0o755)
+            desktop=home/'example.desktop';desktop.write_text('[Desktop Entry]\nName=Example\nExec="'+str(old/'bin/legacy')+'" --profile "My Profile" %U\n')
             archive=home/'new.tgz'
             with tarfile.open(archive,'w:gz') as tar:
                 info=tarfile.TarInfo('example/bin/example');payload=b'#!/bin/sh\ntrue\n';info.size=len(payload);info.mode=0o755;tar.addfile(info,io.BytesIO(payload))
-            data=archive.read_bytes();item=Installation(identify(old),'Example',str(old/'bin/example'),root=str(old),desktop=str(desktop))
+            data=archive.read_bytes();item=Installation(identify(old),'Example',str(old/'bin/legacy'),root=str(old),desktop=str(desktop))
             source=dict(format='archive',name='new.tgz',url='https://github.com/new',page='https://github.com/project',version='2.0',entrypoint='bin/example',sha256=hashlib.sha256(data).hexdigest())
             with patch('ubuntu_update.sources.fetch',side_effect=lambda url,target,**kw:target.write_bytes(data)),patch('ubuntu_update.archives.running_under',return_value=False):
                 self.assertTrue(providers.install(FakeSession(),item,source,home))
             launcher=home/'.local/share/applications/example.desktop'
             self.assertIn('"My Profile" %U',launcher.read_text());self.assertIn('"--profile"',launcher.read_text())
-            self.assertEqual((old/'bin/example').read_text(),'old')
+            self.assertEqual((old/'bin/legacy').read_text(),'old')
+            from ubuntu_update.user_worker import restore
+            with patch('ubuntu_update.archives.running_under',return_value=False):
+                for entry in ('legacy','example'):
+                    restore(FakeSession(),home)
+                    self.assertIn(f'/bin/{entry}" "--profile" "My Profile" %U',launcher.read_text())
 
 class ExecutableVerification(unittest.TestCase):
     def test_foreign_binary_rejected(self):
@@ -155,11 +179,11 @@ class GenericDebSource(unittest.TestCase):
             item=Installation(identify(old),'Unlisted',str(old),package='unlisted',version='1.0')
             data=b'deb fixture';source=dict(format='deb',name='new.deb',url='https://github.com/vendor/file',page='https://github.com/vendor/project',version='2.0',sha256=hashlib.sha256(data).hexdigest())
             session=FakeSession();session.child=Mock(return_value=0)
-            with patch('ubuntu_update.sources.fetch',side_effect=lambda url,target,**kw:target.write_bytes(data)),patch('ubuntu_update.archives.running_under',return_value=False):
+            with patch('ubuntu_update.packages.deb_metadata',return_value=dict(Package='unlisted',Version='1:2.0-1',Architecture='amd64')), patch('ubuntu_update.providers.subprocess.check_output',return_value='amd64'), patch('ubuntu_update.sources.fetch',side_effect=lambda url,target,**kw:target.write_bytes(data)),patch('ubuntu_update.archives.running_under',return_value=False):
                 self.assertTrue(providers.install(session,item,source,home))
             command,payload=session.child.call_args.args
             self.assertEqual(command,['/usr/bin/pkexec','/usr/lib/ubuntu-update-utility/helper','--local-deb'])
-            self.assertEqual(payload['sha256'],source['sha256']);self.assertEqual(payload['version'],'2.0')
+            self.assertEqual(payload['sha256'],source['sha256']);self.assertEqual(payload['version'],'1:2.0-1')
             self.assertFalse(Path(payload['path']).exists())
 
 class AppImageRecovery(unittest.TestCase):

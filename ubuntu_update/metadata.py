@@ -1,6 +1,11 @@
 """Read application identity from data, without executing an installed binary."""
 import json
 from pathlib import Path
+
+try:
+    from .paths import app_roots
+except ImportError:
+    from paths import app_roots
 import re
 import struct
 import xml.etree.ElementTree as ET
@@ -47,8 +52,12 @@ def enrich(item):
         if managed.is_file():
             try:
                 data=json.loads(managed.read_text())
+                if not isinstance(data,dict) or not isinstance(data.get('name'),str) or any(not isinstance(data.get(key,''),str) for key in ('version','provider','original_id','entrypoint','channel','homepage')):
+                    raise ValueError('Manifest applicazione non valido')
                 item.name=data['name'];item.version=data.get('version','');item.root=str(root);item.managed=True
                 stable=data.get('original_id','')
+                if not stable and root.parent in app_roots() and re.fullmatch(r'[0-9a-f]{64}',root.name):
+                    stable='install:'+root.name
                 if re.fullmatch(r'install:[0-9a-f]{64}',stable): item.stable_id=stable
                 item.provider=data.get('provider','builtin' if item.name in ('Postman','JMeter','Audacity standalone','Forge') else '')
                 item.entrypoint=data.get('entrypoint','')
@@ -63,7 +72,7 @@ def enrich(item):
             try: data=json.loads(manifest.read_text())
             except (OSError,ValueError): continue
             if not isinstance(data,dict): continue
-            if data.get('name','').lower()=='postman' and (root/'Postman').exists():
+            if isinstance(data.get('name'),str) and data['name'].lower()=='postman' and (root/'Postman').exists():
                 if relative=='resources/app/package.json' and root.name=='app' and (root.parent/'Postman').exists():root=root.parent
                 item.name='Postman';item.provider='builtin';item.entrypoint='Postman';matched=True
             repository=data.get('repository',{})

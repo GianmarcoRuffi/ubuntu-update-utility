@@ -27,7 +27,7 @@ class Workflows(unittest.TestCase):
         self.assertFalse(any('autoclean' in cmd or 'clean' in cmd or 'autoremove' in cmd for cmd in s.commands))
     def test_cleanup_confirmation_rejected(self):
         s=FakeSession(False)
-        with tempfile.TemporaryDirectory() as temp,patch('ubuntu_update.engine.kernel_versions_to_keep',return_value={'6.17.0-1-generic'}),patch('ubuntu_update.engine.capture',side_effect=['Inst curl (1)','Remv libunused (1)']),patch('ubuntu_update.engine.tempfile.TemporaryDirectory',return_value=tempfile.TemporaryDirectory(dir=temp)):
+        with tempfile.TemporaryDirectory() as temp,patch('ubuntu_update.engine.approve_apt_removals',return_value=('saltato','libunused')),patch('ubuntu_update.engine.capture',return_value='Inst curl (1)'),patch('ubuntu_update.engine.tempfile.TemporaryDirectory',return_value=tempfile.TemporaryDirectory(dir=temp)):
             engine.apt_update(s)
         self.assertFalse(any('autoremove' in cmd for cmd in s.commands))
     def test_vpn_is_a_regular_apt_package(self):
@@ -49,6 +49,8 @@ class Workflows(unittest.TestCase):
             home=Path(temp);base=home/'.local/share/ubuntu-update-utility/apps';base.mkdir(parents=True)
             for name,value in [('app','new'),('app.previous','old')]:
                 folder=base/name;folder.mkdir();(folder/'version').write_text(value)
+                (folder/'utility-version.json').write_text(json.dumps(dict(name='Postman',version=value)))
+                (folder/'Postman').touch(mode=0o755)
             with patch('ubuntu_update.archives.running_under',return_value=False):restore(s,home)
             self.assertEqual((base/'app/version').read_text(),'old')
             self.assertEqual((base/'app.previous/version').read_text(),'new')

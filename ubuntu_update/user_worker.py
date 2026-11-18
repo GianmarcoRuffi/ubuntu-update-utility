@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 """Unprivileged phase: per-user Flatpak, archives, inventory and recovery."""
 import fcntl
+import json
+import shlex
 import os
 from pathlib import Path
 try:
@@ -22,12 +24,73 @@ except ImportError:
     import sources
 
 
+def restore_archive(current, backup, home):
+    try:
+        from .catalog import CATALOG
+    except ImportError:
+        from catalog import CATALOG
+    def executable(root):
+        data = json.loads((root/'utility-version.json').read_text())
+        if not isinstance(data,dict) or not isinstance(data.get('name'),str):
+            raise ValueError('Manifest di recupero non valido')
+        entry = data.get('entrypoint') or CATALOG.get(data.get('name'),{}).get('entrypoint')
+        if not isinstance(entry,str):
+            raise ValueError('Eseguibile precedente non identificabile')
+        relative = Path(entry)
+        path = root/relative
+        if relative.is_absolute() or '..' in relative.parts or not path.resolve().is_relative_to(root.resolve()) or not path.is_file() or not os.access(path,os.X_OK):
+            raise ValueError('Eseguibile di recupero assente o non avviabile')
+        return relative
+
+    current_entry, previous_entry = executable(current), executable(backup)
+    changes = {}
+    if current_entry != previous_entry:
+        for launcher in (data_home(home)/'applications').glob('*.desktop'):
+            if launcher.is_symlink():
+                continue
+            text = launcher.read_bytes().decode('utf-8')
+            lines = []
+            for line in text.splitlines(keepends=True):
+                if line.startswith('Exec='):
+                    match = re.match(r'Exec=("(?:[^"\\]|\\.)*"|[^\s]+)(.*)',line,re.S)
+                    if match and shlex.split(match[1]) == [str(current/current_entry)]:
+                        quoted = str(current/previous_entry).replace('\\','\\\\').replace('"','\\"').replace('$','\\$').replace(chr(96),'\\'+chr(96))
+                        line = 'Exec="'+quoted+'"'+match[2]
+                lines.append(line)
+            updated = ''.join(lines)
+            if updated != text:
+                changes[launcher] = updated
+    with tempfile.TemporaryDirectory(prefix='.restore-',dir=current.parent) as folder, \
+            tempfile.TemporaryDirectory(prefix='.restore-',dir=(next(iter(changes)).parent if changes else current.parent)) as launchers:
+        swap = Path(folder)/'current'
+        staged = {}
+        for index,(launcher,text) in enumerate(changes.items()):
+            new, old = Path(launchers)/f'{index}.new', Path(launchers)/f'{index}.old'
+            new.write_bytes(text.encode());shutil.copymode(launcher,new);shutil.copy2(launcher,old)
+            staged[launcher] = (new,old)
+        current.rename(swap)
+        try:
+            backup.rename(current)
+        except BaseException:
+            swap.rename(current)
+            raise
+        replaced = []
+        try:
+            for launcher,(new,_) in staged.items():
+                new.replace(launcher);replaced.append(launcher)
+            swap.rename(backup)
+        except BaseException:
+            for launcher in reversed(replaced):
+                staged[launcher][1].replace(launcher)
+            current.rename(backup);swap.rename(current)
+            raise
+
+
 def restore(s, home):
-    base=data_home(home)/'ubuntu-update-utility/apps'
     for current in [p for root in app_roots(home) if root.exists() for p in root.iterdir()]:
         if current.name.endswith('.previous') or current.name.startswith('.'): continue
         backup=current.with_name(current.name+'.previous')
-        if not backup.is_dir(): continue
+        if current.is_symlink() or backup.is_symlink() or not backup.is_dir(): continue
         if s.confirm('Ripristinare '+current.name+'?', 'Scambia la versione attiva con quella precedente. Chiudere prima l’applicazione.'):
             try:
                 from .archives import running_under
@@ -35,12 +98,10 @@ def restore(s, home):
                 from archives import running_under
             if running_under(current):
                 s.result(current.name,'intervento richiesto','Applicazione aperta.'); continue
-            temporary=current.with_name('.swap-'+current.name)
-            current.rename(temporary)
-            try: backup.rename(current)
-            except BaseException:
-                temporary.rename(current); raise
-            temporary.rename(backup)
+            try:
+                restore_archive(current, backup, home)
+            except (OSError, ValueError, RuntimeError) as error:
+                s.result(current.name,'intervento richiesto',str(error));continue
             s.result(current.name,'ripristinato')
 
     try:
@@ -53,14 +114,23 @@ def restore(s, home):
         from inventory import identify
         from providers import verify_appimage
         from archives import running_under
-    for identifier,record in profiles.load(home).items():
-        value=record.get('recovery_path','')
+    records = profiles.load(home)
+    locations = {}
+    if any(record.get('version') and not record.get('recovery_path') for record in records.values()):
+        from importlib import import_module
+        inventory = import_module('.inventory', __package__) if __package__ else import_module('inventory')
+        locations = {item.id:item.path for item in inventory.discover(home)
+                     if Path(item.path).suffix.lower()=='.appimage'}
+    for identifier,record in records.items():
+        value=record.get('recovery_path') or (locations.get(identifier) if record.get('version') else None)
         if not value:continue
         path=Path(value);backup=path.with_name(path.name+'.previous')
         if identify(path)!=identifier or path.is_symlink() or backup.is_symlink():continue
         if not path.is_file() or not backup.is_file():continue
         if any(p.stat().st_uid!=os.getuid() for p in (path,backup)):continue
-        verify_appimage(path);verify_appimage(backup)
+        try: verify_appimage(path);verify_appimage(backup)
+        except (OSError,ValueError) as error:
+            s.result(path.name,'intervento richiesto',str(error));continue
         if running_under(path):
             s.result(path.name,'intervento richiesto','Chiudere l’AppImage prima del recupero.');continue
         if s.confirm('Ripristinare '+path.name+'?',str(path)+'\nScambia il file attivo con la copia precedente.'):
@@ -68,9 +138,15 @@ def restore(s, home):
                 temporary=Path(temp)/'current';path.rename(temporary)
                 try:backup.rename(path)
                 except BaseException:temporary.rename(path);raise
-                temporary.rename(backup)
-            current_version=record.get('version','');record['version']=record.get('previous_version','');record['previous_version']=current_version
-            profiles.save(identifier,record,home)
+                try: temporary.rename(backup)
+                except BaseException:
+                    path.rename(backup);temporary.rename(path);raise
+                updated=dict(record,recovery_path=str(path),version=record.get('previous_version',''),
+                             previous_version=record.get('version',''))
+                try: profiles.save(identifier,updated,home)
+                except (OSError,ValueError) as error:
+                    path.rename(temporary);backup.rename(path);temporary.rename(backup)
+                    s.result(path.name,'errore',str(error));continue
             s.result(path.name,'ripristinato')
 
 

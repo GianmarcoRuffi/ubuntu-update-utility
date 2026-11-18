@@ -31,3 +31,16 @@ class ApplicationEvidence(unittest.TestCase):
             app=apps/'example';(app/'bin').mkdir(parents=True);exe=app/'bin/example';exe.write_bytes(b'#!/bin/sh\n');exe.chmod(0o755)
             found=discover(root,[],[apps],metadata=lambda p:{})
             self.assertEqual([i.name for i in found],['example'])
+
+
+class MalformedMetadata(unittest.TestCase):
+    def test_invalid_name_does_not_stop_scan(self):
+        from ubuntu_update.inventory import discover
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            bundle=root/'broken'
+            bundle.mkdir()
+            (bundle/'package.json').write_text('{"name":null}')
+            (root/'other.AppImage').touch()
+            found=discover(root,[],[root],metadata=lambda path:{})
+            self.assertIn('other',[item.name for item in found])

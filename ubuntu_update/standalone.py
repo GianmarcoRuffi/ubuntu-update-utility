@@ -17,7 +17,7 @@ def offer(session,item,available='Da verificare',reason=''):
 def _process(session,item,apply,home):
     profile=profiles.load(home).get(item.id,{})
     if profile.get('homepage'): item.homepage=profile['homepage']
-    if item.package in DEBS and not any(profile.get(key) for key in ('deb_url','repository','manifest')):
+    if item.package in DEBS and not (profiles.deb_url(profile) or profile.get('repository') or profile.get('manifest')):
         if apply:assist(session,item,home);return
         try:
             try:
@@ -58,13 +58,13 @@ def _process(session,item,apply,home):
     elif not check.available:
         session.result(item.name,'nessun aggiornamento',item.version)
     elif not apply:
-        if check.source['format']=='deb' and not check.source['version']:
+        if check.source['format']=='deb':
             offer(session,item,reason='Seleziona la riga per scaricare il DEB e verificare la versione.')
         else:
             session.emit('candidate',id=item.id,name=item.name,current=item.version or 'Non identificata',available=check.source['version'] or 'Nuovo contenuto AppImage',kind='Standalone',mode='automatic',path=item.root or item.path,homepage=item.homepage,icon=item.icon)
     else:
         if providers.install(session,item,check.source,home):
-            if check.source.get('version'):
+            if check.source.get('version') and check.source['format']=='archive':
                 profile=dict(profile,version=check.source['version'])
                 profiles.save(item.id,profile,home)
 

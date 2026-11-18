@@ -71,6 +71,7 @@ class ArchiveWorkflow(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             home=Path(temp);old=home/'original';(old/'bin').mkdir(parents=True)
             (old/'bin/jmeter').write_text('old executable')
+            (old/'bin/jmeter').chmod(0o755)
             (old/'bin/user.properties').write_text('custom=value')
             wrapper=home/'.local/bin/apache-jmeter-gui';wrapper.parent.mkdir(parents=True)
             wrapper.write_text('#!/bin/sh\nexec '+str(old)+'/bin/jmeter -t suite.jmx "$@"')

@@ -10,6 +10,7 @@ chmod 755 "$stage/usr/lib/ubuntu-update-utility/helper"
 mkdir -p "$stage/usr/share/polkit-1/actions"
 cp packaging/it.local.UbuntuUpdateUtility.policy "$stage/usr/share/polkit-1/actions/"
 cp ubuntu_update/*.py "$stage/usr/lib/ubuntu-update-utility/"
+chmod 755 "$stage/usr/lib/ubuntu-update-utility/apt_cleanup_hook.py"
 cat > "$stage/DEBIAN/control" <<EOF
 Package: ubuntu-update-utility
 Version: $version

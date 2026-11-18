@@ -58,11 +58,9 @@ def update_package(s, package, apply):
         s.result(package, 'gestito da APT', version); return
     arch = subprocess.check_output(['/usr/bin/dpkg','--print-architecture'], text=True).strip()
     source = sources.package_source(package, arch)
-    if source['version'] and not sources.newer(source['version'], version):
-        s.result(package, 'nessun aggiornamento', version); return
     if not apply:
-        s.candidate('deb:'+package,package,version,source['version'],'Standalone')
-        s.result(package, 'aggiornamento disponibile' if source['version'] else 'verifica pacchetto richiesta',
+        s.emit('candidate',id='deb:'+package,name=package,current=version,available=source['version'] or 'Da verificare',kind='Standalone',mode='assisted')
+        s.result(package, 'verifica pacchetto richiesta',
                  f"{version} → {source['version'] or 'ultima versione del produttore'}\n{source['page']}"); return
     if app_running(package):
         s.result(package, 'intervento richiesto', 'Chiudere l’applicazione prima di aggiornarla.'); return

@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 """Installed, root-owned helper. Only fixed operations are available."""
 import fcntl
+import json
+import socket
 import os
 from pathlib import Path
 import re
@@ -72,17 +74,62 @@ def apt_update(s,clean_after=True):
 
 def apt_cleanup(s,base=None):
     base=base or ['/usr/bin/apt-get','-o','DPkg::Lock::Timeout=60']
-    plan = capture(base+['-s', 'autoremove', '--purge'])
-    removed, forbidden = cleanup_plan(plan,kernel_versions_to_keep())
-    if forbidden:
-        s.result('Pulizia APT', 'intervento richiesto', 'Proposta contenente kernel o pacchetti protetti.\n'+plan)
-    elif removed and s.confirm('Rimuovere i pacchetti inutilizzati?', plan):
-        # apt-get itself refuses essential removals without an additional flag.
-        s.command(base+['-y', 'autoremove', '--purge'])
-        s.result('Pulizia APT', 'aggiornato')
-    else: s.result('Pulizia APT', 'saltato' if removed else 'nessun aggiornamento')
+    status, detail = approve_apt_removals(s, base)
+    s.result('Pulizia APT', status, detail)
     s.command(base+['clean'])
     s.result('Cache APT','pulito','Cache dei pacchetti di installazione eliminata.')
+
+
+def approve_apt_removals(s, base):
+    hook = '/usr/lib/ubuntu-update-utility/apt_cleanup_hook.py'
+    args = base + ['-o', 'DPkg::Pre-Install-Pkgs::='+hook,
+                   '-o', 'DPkg::Tools::Options::'+hook+'::Version=3',
+                   '-y', 'autoremove', '--purge']
+    status, detail = 'nessun aggiornamento', ''
+    empty_plan = False
+    received_plan = False
+    with tempfile.TemporaryDirectory(prefix='ubuntu-update-', dir='/run') as directory, \
+            socket.socket(socket.AF_UNIX) as listener, tempfile.TemporaryFile(mode='w+') as log:
+        address = directory+'/approve.sock'
+        listener.bind(address)
+        listener.listen(1)
+        listener.settimeout(0.2)
+        env = dict(os.environ, LC_ALL='C', DEBIAN_FRONTEND='noninteractive',
+                   UPDATE_UTILITY_APT_SOCKET=address)
+        with subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log,
+                              stderr=subprocess.STDOUT, env=env) as apt:
+            try:
+                while apt.poll() is None:
+                    try:
+                        connection, _ = listener.accept()
+                    except TimeoutError:
+                        continue
+                    with connection, connection.makefile('rb') as request:
+                        if received_plan:
+                            raise RuntimeError('APT ha inviato più di un piano di rimozione')
+                        received_plan = True
+                        connection.settimeout(10)
+                        plan = json.loads(request.readline(4*1024**2))
+                        if 'error' in plan:
+                            raise RuntimeError(plan['error'])
+                        packages = plan['packages']
+                        empty_plan = not packages
+                        detail = '\n'.join(f'{name}:{arch} [{version}]' for name, arch, version in packages)
+                        removal_lines = '\n'.join(f'Purg {name}:{arch}' for name, arch, _ in packages)
+                        _, forbidden = cleanup_plan(removal_lines, kernel_versions_to_keep())
+                        if forbidden:
+                            status = 'intervento richiesto'
+                        elif packages:
+                            status = 'aggiornato' if s.confirm('Rimuovere i pacchetti inutilizzati?', detail) else 'saltato'
+                        connection.sendall(b'Y' if status == 'aggiornato' else b'N')
+            finally:
+                code = apt.wait()
+                log.seek(0)
+                for line in log:
+                    s.emit('log', text=line)
+        if code and status not in ('saltato', 'intervento richiesto') and not empty_plan:
+            raise RuntimeError(f'Pulizia APT: codice {code}')
+    return status, detail
 
 
 def drivers(s, apply=True):

@@ -137,7 +137,9 @@ def discover(home=None, desktop_dirs=None, application_dirs=None, metadata=packa
                 item=Installation(identify(path),entry.get('Name',path.name),str(path),icon=entry.get('Icon',''),desktop=str(desktop),wrapper=wrapper,**details)
                 item=enrich(item);item.id=item.stable_id or (package_identify(item.package) if item.package else identify(item.root or path))
                 if item.managed or item.id not in found:found[item.id]=item
-            except (OSError,ValueError,configparser.Error,KeyError): continue
+            except (OSError,ValueError,configparser.Error,KeyError,RuntimeError,TypeError) as error:
+                if on_error:on_error(str(desktop),str(error))
+                continue
     for directory in application_dirs:
         directory=Path(directory)
         if not directory.is_dir(): continue
@@ -164,5 +166,7 @@ def discover(home=None, desktop_dirs=None, application_dirs=None, metadata=packa
                 if path.is_dir() and not looks_like_bundle(path,item):continue
                 item.id=item.stable_id or (package_identify(item.package) if item.package else identify(item.root or path))
                 if item.managed or item.id not in found:found[item.id]=item
-            except (OSError,RuntimeError): continue
+            except (OSError,RuntimeError,ValueError,TypeError) as error:
+                if on_error:on_error(str(path),str(error))
+                continue
     return sorted(found.values(),key=lambda i:(i.name.lower(),i.path))

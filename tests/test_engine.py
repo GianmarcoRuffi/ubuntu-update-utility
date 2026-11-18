@@ -43,3 +43,26 @@ class KernelRetention(unittest.TestCase):
         self.assertFalse(cleanup_plan('Remv linux-image-6.17.0-1-generic',{'6.17.0-2-generic','6.17.0-3-generic'})[1])
     def test_kernel_metapackage_protected(self):
         self.assertTrue(cleanup_plan('Remv linux-image-generic',{'6.17.0-2-generic'})[1])
+
+
+class CleanupHook(unittest.TestCase):
+    def test_multiarch_and_residual_config(self):
+        from ubuntu_update.apt_cleanup_hook import removals
+        plan = io.StringIO(
+            "VERSION 3\nAPT::Architecture=amd64\n\n"
+            "libfixture 1.0 amd64 same > - - none **REMOVE**\n"
+            "libfixture 1.0 i386 same > - - none **REMOVE**\n"
+            "residual 2.0 all none > - - none **REMOVE**\n"
+        )
+        self.assertEqual(removals(plan), [
+            ('libfixture','amd64','1.0'), ('libfixture','i386','1.0'), ('residual','all','2.0'),
+        ])
+
+    def test_rejects_wrong_version_and_other_actions(self):
+        from ubuntu_update.apt_cleanup_hook import removals
+        for plan in (
+            "VERSION 2\n\n",
+            "VERSION 3\n\nfixture 1.0 all none = 1.0 all none **CONFIGURE**\n",
+        ):
+            with self.subTest(plan=plan), self.assertRaises(ValueError):
+                removals(io.StringIO(plan))

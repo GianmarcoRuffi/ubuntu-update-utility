@@ -121,7 +121,7 @@ def appimage_zsync(item,info):
 def check(item,profile=None):
     profile=profile or {}
     try:
-        if profile.get('version') and not item.version: item.version=profile['version']
+        if not item.package and profile.get('version') and not item.version: item.version=profile['version']
         if item.package and (url := profiles.deb_url(profile)):
             profiles.validate_url(url)
             source = dict(version='', url=url, name='package.deb', page=profile.get('homepage') or url,
@@ -138,6 +138,7 @@ def check(item,profile=None):
             source=github(item,profile)
         if item.package and source['format']!='deb':return Check(source,'Il pacchetto proposto cambia il formato dell’installazione: procedura assistita richiesta.',True)
         if source['format']=='deb' and not item.package:return Check(source,'Il DEB richiede una migrazione: l’installazione attuale non appartiene a un pacchetto Debian.',True)
+        if source['format']=='deb': return Check(source,available=True)
         if source['format']=='archive':
             validate_entrypoint(source['entrypoint'])
             if item.wrapper:return Check(source,'Il launcher usa un wrapper personalizzato: seguire il percorso assistito per conservarne le opzioni.',True)
@@ -202,15 +203,16 @@ def install(session,item,source,home):
             if source.get(algorithm): sources.verify(download,source[algorithm],algorithm)
         if source['format']=='deb':
             expected = source['version']
-            if direct_deb:
-                metadata = packages.deb_metadata(download)
-                arch = subprocess.check_output(['/usr/bin/dpkg','--print-architecture'],text=True).strip()
-                if metadata.get('Package') != item.package or metadata.get('Architecture') not in (arch,'all'):
-                    raise ValueError('Prodotto o architettura del DEB non corrispondenti')
-                if item.version and not sources.newer(metadata['Version'],item.version):
-                    session.result(item.name,'nessun aggiornamento',item.version)
-                    return False
-                expected = metadata['Version'].rsplit(':',1)[-1]
+            metadata = packages.deb_metadata(download)
+            arch = subprocess.check_output(['/usr/bin/dpkg','--print-architecture'],text=True).strip()
+            if metadata.get('Package') != item.package or metadata.get('Architecture') not in (arch,'all'):
+                raise ValueError('Prodotto o architettura del DEB non corrispondenti')
+            if item.version and not sources.newer(metadata['Version'],item.version):
+                session.result(item.name,'nessun aggiornamento',item.version)
+                return False
+            if expected and not packages.deb_version_matches(metadata['Version'],expected):
+                raise ValueError('Versione pacchetto diversa da quella pubblicata')
+            expected = metadata['Version']
             with download.open('rb') as stream:digest=hashlib.file_digest(stream,'sha256').hexdigest()
             code=session.child(['/usr/bin/pkexec','/usr/lib/ubuntu-update-utility/helper','--local-deb'],dict(package=item.package,path=str(download),sha256=digest,version=expected))
             if code:
@@ -219,13 +221,21 @@ def install(session,item,source,home):
             verify_appimage(download);download.chmod(0o755)
             backup=old.with_name(old.name+'.previous')
             if backup.exists() and (backup.is_symlink() or not backup.is_file()): raise ValueError('Copia di recupero inattesa')
-            if backup.exists(): backup.unlink()
-            old.rename(backup)
-            try: download.rename(old)
+            older = temp/'older'
+            if backup.is_symlink(): raise ValueError('Copia di recupero simbolica')
+            if backup.exists(): backup.rename(older)
+            try:
+                old.rename(backup)
+                try:
+                    download.rename(old)
+                    record=profiles.load(home).get(item.id,{})
+                    profiles.save(item.id,dict(record,recovery_path=str(old),previous_version=item.version,version=source['version'] or item.version),home)
+                except BaseException:
+                    backup.replace(old)
+                    raise
             except BaseException:
-                backup.rename(old);raise
-            record=profiles.load(home).get(item.id,{})
-            profiles.save(item.id,dict(record,recovery_path=str(old),previous_version=item.version,version=source['version'] or item.version),home)
+                if older.exists(): older.rename(backup)
+                raise
             # Keep executable location unchanged so desktop arguments are preserved.
         else:
             unpack=temp/'unpack';safe_extract(download,unpack)
@@ -259,10 +269,11 @@ def install(session,item,source,home):
                 import shutil
                 backup=target.with_name(target.name+'.previous')
                 if backup.exists():raise ValueError('Copia di recupero già presente: verificare l’installazione')
+                previous_entry = Path(item.path).relative_to(old) if old.is_dir() else Path(old.name)
                 if old.is_dir():shutil.copytree(old,backup,symlinks=True)
                 else:
-                    backup.mkdir();saved=backup/relative;saved.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(old,saved)
-                (backup/'utility-version.json').write_text(json.dumps(dict(name=item.name,version=item.version,provider='generic',entrypoint=str(relative),homepage=item.homepage,original_id=item.id)))
+                    backup.mkdir();saved=backup/previous_entry;saved.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(old,saved)
+                (backup/'utility-version.json').write_text(json.dumps(dict(name=item.name,version=item.version,provider='generic',entrypoint=str(previous_entry),homepage=item.homepage,original_id=item.id)))
                 staged.rename(target)
             else:activate(staged,target)
             try:
@@ -276,5 +287,6 @@ def install(session,item,source,home):
                     target.rename(failed);target.with_name(target.name+'.previous').rename(target)
                 raise
     session.emit('completed',id=item.id)
+    if source['format']=='deb': return True
     session.result(item.name,'aggiornato',(source['version'] or 'Contenuto AppImage aggiornato')+'\nInstallazione: '+str(old))
     return True

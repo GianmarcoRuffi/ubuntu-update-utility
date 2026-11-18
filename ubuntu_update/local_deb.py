@@ -9,11 +9,11 @@ import subprocess
 import sys
 import tempfile
 try:
-    from .packages import deb_metadata, deb_version_matches, installed
+    from .packages import deb_metadata, installed
     from .sources import newer
     from .runtime import Cancelled
 except ImportError:
-    from packages import deb_metadata, deb_version_matches, installed
+    from packages import deb_metadata, installed
     from sources import newer
     from runtime import Cancelled
 
@@ -50,7 +50,7 @@ def apply(session,request,caller_uid):
             arch=subprocess.check_output(['/usr/bin/dpkg','--print-architecture'],text=True).strip()
             if data.get('Package')!=package or data.get('Architecture') not in (arch,'all'): raise ValueError('Prodotto o architettura del DEB non corrispondenti')
             expected=request.get('version','')
-            if expected and not deb_version_matches(data.get('Version',''),expected):
+            if expected and data.get('Version') != expected:
                 raise ValueError('Versione del DEB diversa da quella richiesta')
             if not newer(data['Version'],current): raise ValueError('Il DEB non contiene una versione più recente')
             base=['/usr/bin/apt-get','-o','DPkg::Lock::Timeout=60','--no-remove']
