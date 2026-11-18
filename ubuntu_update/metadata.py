@@ -73,7 +73,10 @@ def enrich(item):
             except (OSError,ValueError): continue
             if not isinstance(data,dict): continue
             if isinstance(data.get('name'),str) and data['name'].lower()=='postman' and (root/'Postman').exists():
-                if relative=='resources/app/package.json' and root.name=='app' and (root.parent/'Postman').exists():root=root.parent
+                # Postman's top-level launcher is a symlink into app/. Read the
+                # enclosing bundle's utility manifest before using package.json.
+                if relative=='resources/app/package.json' and root.name=='app' and (root.parent/'Postman').exists():
+                    break
                 item.name='Postman';item.provider='builtin';item.entrypoint='Postman';matched=True
             repository=data.get('repository',{})
             repo=repository.get('url','') if isinstance(repository,dict) else repository

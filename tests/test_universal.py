@@ -30,6 +30,30 @@ class UniversalInventory(unittest.TestCase):
             apps=root/'desktop';apps.mkdir();(apps/'tool.desktop').write_text('[Desktop Entry]\nName=My tool\nExec='+str(app/'Postman')+'\n')
             result=discover(root,[apps],[],metadata=lambda _: {})
             self.assertEqual(result[0].root,str(app));self.assertEqual(result[0].provider,'builtin');self.assertEqual(result[0].version,'12.0.1')
+    def test_symlinked_postman_launcher_keeps_managed_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            desktop = root / 'applications'
+            desktop.mkdir()
+            for name in ('original', 'managed'):
+                bundle = root / name
+                resources = bundle / 'app/resources/app'
+                resources.mkdir(parents=True)
+                (resources / 'package.json').write_text(json.dumps(dict(name='Postman', version='12.0.1')))
+                (bundle / 'app/Postman').touch()
+                (bundle / 'Postman').symlink_to('app/Postman')
+                (desktop / (name + '.desktop')).write_text(
+                    '[Desktop Entry]\nName=Postman\nExec=' + str(bundle / 'Postman') + '\n')
+            original_id = identify(root / 'original')
+            (root / 'managed/utility-version.json').write_text(json.dumps(
+                dict(name='Postman', version='12.0.1', provider='builtin', original_id=original_id)))
+
+            result = discover(root, [desktop], [root], metadata=lambda _: {})
+
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0].id, original_id)
+            self.assertEqual(result[0].root, str(root / 'managed'))
+            self.assertTrue(result[0].managed)
     def test_user_hidden_entry_overrides_system(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);user=root/'user';system=root/'system';user.mkdir();system.mkdir();binary=root/'app';binary.touch()
