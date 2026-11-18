@@ -10,7 +10,7 @@ Costruire con `sh packaging/build.sh`. Installare il pacchetto in `dist` con un
 doppio clic oppure:
 
 ```sh
-sudo apt install ./dist/ubuntu-update-utility_0.5.1_all.deb
+sudo apt install ./dist/ubuntu-update-utility_0.5.2_all.deb
 ```
 
 Aprire **Ubuntu Update Utility** dal menu. Per il collegamento Desktop eseguire

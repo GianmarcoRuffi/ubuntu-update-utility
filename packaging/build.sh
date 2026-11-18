@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
-version=0.5.1
+version=0.5.2
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/DEBIAN" "$stage/usr/lib/ubuntu-update-utility" "$stage/usr/share/applications"
