@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
+version=0.5.1
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/DEBIAN" "$stage/usr/lib/ubuntu-update-utility" "$stage/usr/share/applications"
@@ -11,7 +12,7 @@ cp packaging/it.local.UbuntuUpdateUtility.policy "$stage/usr/share/polkit-1/acti
 cp ubuntu_update/*.py "$stage/usr/lib/ubuntu-update-utility/"
 cat > "$stage/DEBIAN/control" <<EOF
 Package: ubuntu-update-utility
-Version: 0.5.0
+Version: $version
 Architecture: all
 Maintainer: Ubuntu Update Utility - Progetto locale <local@localhost>
 Depends: python3 (>= 3.12), apt, snapd, flatpak, fwupd, ubuntu-drivers-common, python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1 (>= 1.2), pkexec
@@ -24,8 +25,8 @@ Description: Ubuntu Update Utility - aggiornamenti e pulizia per Ubuntu
   * Rileva app standalone, Snap e Flatpak senza percorsi personali predefiniti;
     cerca le versioni disponibili e mostra icone, versioni
     installate e disponibili e checkbox per scegliere cosa aggiornare.
-  * Usa fonti generiche AppImage, GitHub, manifest JSON e appcast, e adattatori
-    dedicati per Postman, JMeter, Audacity, Forge,
+  * Usa fonti generiche AppImage, GitHub, manifest JSON, appcast e link diretti
+    ai pacchetti DEB. Offre adattatori per Postman, JMeter, Audacity, Forge, Discord,
     Docker Desktop, DBeaver, GitHub Desktop e Teams for Linux, quando installati
     senza un repository APT che ne gestisca già gli aggiornamenti.
   * Controlla identità, architettura e versione dei pacchetti scaricati e
@@ -66,4 +67,4 @@ mkdir -p "$stage/usr/share/icons/hicolor/scalable/apps" "$stage/usr/share/metain
 cp assets/icons/hicolor/scalable/apps/*.svg "$stage/usr/share/icons/hicolor/scalable/apps/"
 cp packaging/it.local.UbuntuUpdateUtility.metainfo.xml "$stage/usr/share/metainfo/"
 mkdir -p dist
-dpkg-deb --root-owner-group --build "$stage" dist/ubuntu-update-utility_0.5.0_all.deb
+dpkg-deb --root-owner-group --build "$stage" "dist/ubuntu-update-utility_${version}_all.deb"

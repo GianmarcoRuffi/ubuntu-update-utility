@@ -5,6 +5,7 @@ CATALOG = {
     'Audacity standalone': {'format': 'archive', 'entrypoint': 'AppRun', 'homepage': 'https://github.com/audacity/audacity'},
     'Forge': {'format': 'archive', 'entrypoint': 'forge-adventure.sh', 'homepage': 'https://github.com/Card-Forge/forge'},
     'docker-desktop': {'format': 'deb'},
+    'discord': {'format': 'deb'},
     'dbeaver-ce': {'format': 'deb'},
     'github-desktop': {'format': 'deb'},
     'teams-for-linux': {'format': 'deb'},

@@ -195,7 +195,7 @@ class Utility(Adw.Application):
             row = Adw.ActionRow(title=title,subtitle=subtitle)
             row.set_use_markup(False)
             row.assisted=candidate.get('mode')=='assisted'
-            row.set_tooltip_text(candidate.get('path',candidate['name']))
+            row.set_tooltip_text('\n'.join(filter(None,(candidate.get('path',candidate['name']),candidate.get('reason')))))
             image = Gtk.Image.new_from_gicon(desktop_icon(candidate))
             image.set_pixel_size(32)
             row.add_prefix(image)

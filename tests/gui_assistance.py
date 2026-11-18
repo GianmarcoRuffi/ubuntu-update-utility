@@ -14,7 +14,7 @@ class Process:
 process=Process()
 
 def verify():
-    app.event(dict(type='assistance',installation=dict(id=identify('/example'),name='Example',path='/example',version='1.0',homepage='',instructions='Verifica della fonte',profile={})),process)
+    app.event(dict(type='assistance',installation=dict(id=identify('/example'),name='Example',path='/example',version='1.0',package='example',homepage='',instructions='Verifica della fonte',profile={})),process)
     GLib.timeout_add(250,fill)
     return False
 
@@ -23,10 +23,13 @@ def fill():
     dialog.save_button.emit('clicked')
     assert dialog.error_label.get_text(),'Empty source must remain in the dialog'
     assert process.stdin.getvalue()==''
-    dialog.source_fields['homepage'].set_text('https://vendor.example/')
+    dialog.source_fields['deb_url'].set_text('http://vendor.example/example.deb')
+    dialog.save_button.emit('clicked')
+    assert process.stdin.getvalue()==''
+    dialog.source_fields['deb_url'].set_text('https://vendor.example/example.deb')
     dialog.save_button.emit('clicked')
     value=json.loads(process.stdin.getvalue())
-    assert value['action']=='save' and value['profile']['homepage']=='https://vendor.example/'
+    assert value['action']=='save' and value['profile']['deb_url']=='https://vendor.example/example.deb'
     print('Native assisted source association, validation and response: passed',flush=True)
     app.quit();return False
 GLib.timeout_add(800,verify)

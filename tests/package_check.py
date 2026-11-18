@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 root=Path(__file__).resolve().parents[1]
-archive=root/'dist/ubuntu-update-utility_0.5.0_all.deb'
+archive=root/'dist/ubuntu-update-utility_0.5.1_all.deb'
 with tempfile.TemporaryDirectory() as temp:
     temp=Path(temp)
     subprocess.run(['dpkg-deb','-x',str(archive),str(temp)],check=True)

@@ -8,13 +8,13 @@
   <p>Ubuntu Update Utility è un'applicazione desktop in italiano per Ubuntu che riunisce aggiornamenti e pulizia in una finestra con due pannelli affiancati.</p>
   <p>Cerca le nuove versioni delle applicazioni standalone, Snap e Flatpak, mostra le icone e le versioni disponibili e permette di selezionare con una checkbox solo le app da aggiornare.</p>
   <ul>
-   <li>Aggiornatori dedicati per Postman, JMeter, Audacity, Forge, Docker Desktop, DBeaver, GitHub Desktop e Teams for Linux, quando non già gestiti da APT.</li>
+   <li>Aggiornatori dedicati per Postman, JMeter, Audacity, Forge, Discord, Docker Desktop, DBeaver, GitHub Desktop e Teams for Linux, quando non già gestiti da APT.</li>
    <li>Aggiornamenti separati del sistema con APT, rilevamento dei driver raccomandati e controllo del firmware.</li>
    <li>Autenticazione Polkit senza memorizzare la password; conferme dedicate per nuovi driver e firmware. Nessuna esclusione personale per nome di applicazione.</li>
    <li>Pulizia della cache APT, autoremove con purge e anteprima, revisioni Snap obsolete, runtime Flatpak inutilizzati e temporanei dell'utility.</li>
    <li>Protezione dei kernel necessari, dei file personali e delle copie di recupero; ripristino della versione precedente delle app standalone gestite.</li>
    <li>Registro delle operazioni, annullamento tra operazioni e riepilogo finale di aggiornamenti riusciti, falliti o da completare.</li>
-   <li>Inventario generale delle installazioni, fonti AppImage, GitHub, manifest JSON e appcast, con associazioni per singola installazione.</li>
+   <li>Inventario generale delle installazioni, fonti AppImage, GitHub, manifest JSON, appcast e link diretti ai DEB, con associazioni per singola installazione.</li>
    <li>Procedure assistite per configurare una fonte, consultare il produttore o installare un DEB scaricato; nessun aggiornamento dichiarato riuscito senza verifica.</li>
   </ul>
   <p>XAMPP, Gpick personalizzato e le applicazioni senza un metodo verificabile sono segnalati per la verifica manuale. Nessun riavvio automatico del PC.</p>
@@ -24,5 +24,8 @@
  <developer id="local.utility"><name>Progetto locale</name></developer>
  <content_rating type="oars-1.1"/>
  <categories><category>System</category></categories>
- <releases><release version="0.5.0" date="2026-11-17"/></releases>
+ <releases>
+  <release version="0.5.1" date="2026-11-18"/>
+  <release version="0.5.0" date="2026-11-17"/>
+ </releases>
 </component>

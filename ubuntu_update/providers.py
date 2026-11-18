@@ -15,9 +15,9 @@ import tempfile
 from urllib.parse import urlsplit, urljoin
 import xml.etree.ElementTree as ET
 try:
-    from . import sources,profiles
+    from . import sources,profiles,packages
 except ImportError:
-    import sources,profiles
+    import sources,profiles,packages
 
 @dataclass
 class Check:
@@ -42,7 +42,9 @@ def github(item,profile):
     if not repository:
         match=re.fullmatch(r'https://github.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/?',item.homepage)
         if match: repository=match[1]
-    if not repository: raise ValueError('Repository non identificato')
+    if not repository:
+        if item.package: raise ValueError('Indica il link diretto al DEB, un repository GitHub o un manifest di aggiornamento.')
+        raise ValueError('Repository non identificato')
     channel=profile.get('channel',item.channel)
     pattern=profile.get('asset','')
     if not pattern:
@@ -120,6 +122,11 @@ def check(item,profile=None):
     profile=profile or {}
     try:
         if profile.get('version') and not item.version: item.version=profile['version']
+        if item.package and (url := profiles.deb_url(profile)):
+            profiles.validate_url(url)
+            source = dict(version='', url=url, name='package.deb', page=profile.get('homepage') or url,
+                          format='deb', hosts=sources.HOSTS | {urlsplit(url).hostname})
+            return Check(source, available=True)
         if profile.get('manifest'): source=external_manifest(item,profile)
         elif item.update_info.startswith('zsync|'): source=appimage_zsync(item,item.update_info)
         else:
@@ -177,7 +184,9 @@ def install(session,item,source,home):
     if source['format']=='assisted': return False
     if running_under(old) or running_under(Path(item.path)):
         session.result(item.name,'intervento richiesto','Chiudere l’applicazione e riprovare.');return False
-    if not session.confirm('Aggiornare '+item.name+'?',f"Installazione: {old}\nFonte: {source['page']}\nPacchetto: {source['url']}\nVersione: {item.version or 'non identificata'} → {source['version'] or 'nuovo contenuto verificato tramite zsync'}"):
+    direct_deb = source['format']=='deb' and not source['version']
+    candidate = source['version'] or ('da verificare nel DEB' if direct_deb else 'nuovo contenuto verificato tramite zsync')
+    if not session.confirm('Aggiornare '+item.name+'?',f"Installazione: {old}\nFonte: {source['page']}\nPacchetto: {source['url']}\nVersione: {item.version or 'non identificata'} → {candidate}"):
         session.result(item.name,'saltato');return False
     if source['format']=='appimage' and old.is_file():
         if old.stat().st_uid!=__import__('os').getuid() or not __import__('os').access(old.parent,__import__('os').W_OK):
@@ -187,12 +196,23 @@ def install(session,item,source,home):
         base=data_home(home)/'ubuntu-update-utility/apps';base.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.staging-',dir=base) as temp:
         temp=Path(temp);download=temp/source['name']
-        sources.fetch(source['url'],download,limit=3*1024**3,allowed_hosts=source.get('hosts'))
+        limit = (2 if source['format']=='deb' else 3)*1024**3
+        sources.fetch(source['url'],download,limit=limit,allowed_hosts=source.get('hosts'))
         for algorithm in ('sha256','sha512','sha1'):
             if source.get(algorithm): sources.verify(download,source[algorithm],algorithm)
         if source['format']=='deb':
+            expected = source['version']
+            if direct_deb:
+                metadata = packages.deb_metadata(download)
+                arch = subprocess.check_output(['/usr/bin/dpkg','--print-architecture'],text=True).strip()
+                if metadata.get('Package') != item.package or metadata.get('Architecture') not in (arch,'all'):
+                    raise ValueError('Prodotto o architettura del DEB non corrispondenti')
+                if item.version and not sources.newer(metadata['Version'],item.version):
+                    session.result(item.name,'nessun aggiornamento',item.version)
+                    return False
+                expected = metadata['Version'].rsplit(':',1)[-1]
             with download.open('rb') as stream:digest=hashlib.file_digest(stream,'sha256').hexdigest()
-            code=session.child(['/usr/bin/pkexec','/usr/lib/ubuntu-update-utility/helper','--local-deb'],dict(package=item.package,path=str(download),sha256=digest,version=source['version']))
+            code=session.child(['/usr/bin/pkexec','/usr/lib/ubuntu-update-utility/helper','--local-deb'],dict(package=item.package,path=str(download),sha256=digest,version=expected))
             if code:
                 session.result(item.name,'intervento richiesto','Il pacchetto non è stato installato. Controllare i dettagli.');return False
         elif source['format']=='appimage':

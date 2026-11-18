@@ -18,6 +18,8 @@ def instructions(item):
         text+=f'Conserva edizione e ramo installati ({branch or "da verificare"}). Se il client è gestito da un’azienda, verifica le indicazioni del suo amministratore. L’aggiornamento può interrompere la VPN. Scarica il DEB compatibile dal portale ufficiale.\n'
     else:
         text+='Associa il sito o repository ufficiale. Per archivi o compilazioni non riconosciuti consulta le istruzioni del produttore, verifica i dati locali e conserva la versione precedente.\n'
+    if item.package:
+        text+='Se il produttore offre un link diretto al DEB, salvalo per far scaricare e verificare il pacchetto all’utility.\n'
     return text
 
 

@@ -54,6 +54,57 @@ class Workflows(unittest.TestCase):
             self.assertEqual((base/'app.previous/version').read_text(),'new')
 
 class PackageLifecycle(unittest.TestCase):
+    def test_discord_resolves_official_deb_and_installs_selected_version(self):
+        from ubuntu_update import packages, sources, standalone
+        from ubuntu_update.inventory import Installation, package_identify
+
+        session = FakeSession()
+        item = Installation(package_identify('discord'), 'Discord', '/usr/bin/discord', version='1.0.168', package='discord')
+        cdn = 'https://stable.dl2.discordapp.net/distro/app/stable/linux/x64/1.0.169/Discord.deb'
+
+        def download(url, target, **kwargs):
+            self.assertEqual(url, cdn)
+            self.assertEqual(kwargs['allowed_hosts'], sources.DISCORD_CDNS)
+            target.write_bytes(b'deb fixture')
+
+        original_run = subprocess.run
+
+        def simulate(args, **kwargs):
+            if args[0] == '/usr/bin/apt-get':
+                return subprocess.CompletedProcess(args, 0, 'Inst discord (1.0.169)', '')
+            return original_run(args, **kwargs)
+
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch.object(sources, 'open_url') as request,
+            patch.object(sources, 'fetch', side_effect=download) as fetch,
+            patch.object(packages, 'installed', side_effect=['1.0.168', '1.0.168', '1.0.169']),
+            patch.object(packages, 'repository_managed', return_value=False),
+            patch.object(packages, 'app_running', return_value=False),
+            patch('subprocess.check_output', side_effect=['amd64\n','amd64\n','Package: discord\nVersion: 1.0.169\nArchitecture: amd64\n']),
+            patch('subprocess.run', side_effect=simulate),
+            patch.object(session, 'confirm', return_value=True) as confirm,
+        ):
+            request.return_value.__enter__.return_value.url = cdn
+            standalone.process(session,item,False,Path(temp))
+            self.assertIn('"id": "deb:discord"',session.stream.getvalue())
+            fetch.assert_not_called()
+            packages.update_package(session,'discord',True)
+            self.assertEqual(request.call_args.kwargs['method'], 'HEAD')
+            confirm.assert_called_once()
+        self.assertEqual(session.results[-1]['status'], 'aggiornato')
+        self.assertFalse(Path(session.commands[0][-1]).exists())
+
+    def test_discord_rejects_an_unexpected_download_target(self):
+        from ubuntu_update import sources
+
+        for url in ('https://outside.example/Discord.deb',
+                    'https://stable.dl2.discordapp.net/distro/app/canary/linux/x64/1.0.169/Discord.deb'):
+            with self.subTest(url=url), patch.object(sources,'open_url') as request:
+                request.return_value.__enter__.return_value.url = url
+                with self.assertRaises(ValueError):
+                    sources.package_source('discord','amd64')
+
     def test_verified_deb_installs_and_download_is_removed(self):
         from ubuntu_update import packages
         s=FakeSession()

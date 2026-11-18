@@ -15,7 +15,9 @@ def offer(session,item,available='Da verificare',reason=''):
 
 
 def _process(session,item,apply,home):
-    if item.package in DEBS:
+    profile=profiles.load(home).get(item.id,{})
+    if profile.get('homepage'): item.homepage=profile['homepage']
+    if item.package in DEBS and not any(profile.get(key) for key in ('deb_url','repository','manifest')):
         if apply:assist(session,item,home);return
         try:
             try:
@@ -25,9 +27,6 @@ def _process(session,item,apply,home):
             update_package(session,item.package,False)
         except (OSError,ValueError,KeyError) as error:offer(session,item,reason=str(error))
         return
-    profile=profiles.load(home).get(item.id,{})
-    if not isinstance(profile,dict):profile={}
-    if profile.get('homepage'): item.homepage=profile['homepage']
     if item.provider=='builtin' and item.name in CATALOG and not profile.get('repository') and not profile.get('manifest'):
         if not item.version:
             if apply:assist(session,item,home)
@@ -59,7 +58,10 @@ def _process(session,item,apply,home):
     elif not check.available:
         session.result(item.name,'nessun aggiornamento',item.version)
     elif not apply:
-        session.emit('candidate',id=item.id,name=item.name,current=item.version or 'Non identificata',available=check.source['version'] or 'Nuovo contenuto AppImage',kind='Standalone',mode='automatic',path=item.root or item.path,homepage=item.homepage,icon=item.icon)
+        if check.source['format']=='deb' and not check.source['version']:
+            offer(session,item,reason='Seleziona la riga per scaricare il DEB e verificare la versione.')
+        else:
+            session.emit('candidate',id=item.id,name=item.name,current=item.version or 'Non identificata',available=check.source['version'] or 'Nuovo contenuto AppImage',kind='Standalone',mode='automatic',path=item.root or item.path,homepage=item.homepage,icon=item.icon)
     else:
         if providers.install(session,item,check.source,home):
             if check.source.get('version'):

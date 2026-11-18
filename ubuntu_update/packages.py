@@ -26,15 +26,28 @@ def repository_managed(package):
 
 
 def app_running(package):
-    needles = {'docker-desktop': ('/opt/docker-desktop/',), 'dbeaver-ce': ('/usr/share/dbeaver/', '/usr/share/dbeaver-ce/'),
+    needles = {'discord': ('/usr/share/discord/', '/opt/discord/'),
+               'docker-desktop': ('/opt/docker-desktop/',), 'dbeaver-ce': ('/usr/share/dbeaver/', '/usr/share/dbeaver-ce/'),
                'github-desktop': ('/usr/lib/github-desktop/', '/opt/github-desktop/'), 'teams-for-linux': ('/opt/teams-for-linux/',)}[package]
     for proc in Path('/proc').iterdir():
         if not proc.name.isdigit(): continue
         try:
-            executable = str((proc/'exe').resolve(strict=True))
-            if any(executable.startswith(n) for n in needles): return True
+            executable = (proc/'exe').resolve(strict=True)
+            if any(str(executable).startswith(n) for n in needles): return True
+            if package == 'discord' and executable.name == 'Discord' and 'discord' in executable.parts:
+                return True
         except (OSError, RuntimeError): continue
     return False
+
+
+def deb_metadata(path):
+    fields = subprocess.check_output(['/usr/bin/dpkg-deb','-f',str(path),'Package','Version','Architecture'], text=True)
+    return dict(line.split(': ', 1) for line in fields.splitlines())
+
+
+def deb_version_matches(candidate, expected):
+    upstream = candidate.rsplit(':', 1)[-1]
+    return upstream == expected or upstream.startswith((expected+'-', expected+'+'))
 
 
 def update_package(s, package, apply):
@@ -55,16 +68,15 @@ def update_package(s, package, apply):
         s.result(package, 'intervento richiesto', 'Chiudere l’applicazione prima di aggiornarla.'); return
     with tempfile.TemporaryDirectory(prefix='ubuntu-update-deb-', dir='/var/tmp') as directory:
         target = Path(directory)/source['name']
-        sources.fetch(source['url'], target, limit=2*1024**3)
+        sources.fetch(source['url'], target, limit=2*1024**3, allowed_hosts=source.get('hosts'))
         if source['sha256']: sources.verify(target, source['sha256'])
-        fields = subprocess.check_output(['/usr/bin/dpkg-deb','-f',str(target),'Package','Version','Architecture'], text=True)
-        metadata = dict(line.split(': ',1) for line in fields.splitlines())
+        metadata = deb_metadata(target)
         if metadata.get('Package') != package or metadata.get('Architecture') not in (arch,'all'):
             raise ValueError('Identità o architettura del pacchetto errata')
         candidate = metadata['Version']
         if not sources.newer(candidate, version):
             s.result(package, 'nessun aggiornamento', version); return
-        if source['version'] and source['version'] not in candidate:
+        if source['version'] and not deb_version_matches(candidate, source['version']):
             raise ValueError('Versione pacchetto diversa da quella pubblicata')
         # Prevent dependency removals and any implicit upgrade of the VPN.
         args = ['/usr/bin/apt-get','-o','DPkg::Lock::Timeout=60','--no-remove']

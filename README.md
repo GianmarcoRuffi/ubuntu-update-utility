@@ -10,7 +10,7 @@ Costruire con `sh packaging/build.sh`. Installare il pacchetto in `dist` con un
 doppio clic oppure:
 
 ```sh
-sudo apt install ./dist/ubuntu-update-utility_0.5.0_all.deb
+sudo apt install ./dist/ubuntu-update-utility_0.5.1_all.deb
 ```
 
 Aprire **Ubuntu Update Utility** dal menu. Per il collegamento Desktop eseguire
@@ -51,7 +51,8 @@ l’autenticazione Polkit, senza memorizzare la password.
 Gli aggiornatori dedicati esistenti sono adattatori del catalogo comune. Postman,
 JMeter, Audacity e Forge vengono riconosciuti dai metadati della loro installazione,
 anche in percorsi diversi da quelli del PC originale. I pacchetti Docker Desktop,
-DBeaver, GitHub Desktop e Teams hanno adattatori dedicati quando non gestiti da APT.
+DBeaver, Discord (DEB stabile amd64), GitHub Desktop e Teams hanno adattatori dedicati
+quando non gestiti da APT.
 Le build di sviluppo non vengono trasformate silenziosamente in release stabili.
 
 Il motore generale riconosce informazioni di aggiornamento AppImage, release
@@ -64,6 +65,9 @@ Selezionando una riga assistita è possibile:
 
 - consultare i passaggi necessari e aprire il sito ufficiale;
 - associare una fonte e, se necessario, dichiarare la versione installata;
+- salvare il link HTTPS diretto al DEB del produttore. Dopo una nuova ricerca,
+  selezionare la riga assistita e premere **Aggiorna selezionate** per scaricare il
+  pacchetto, leggere la versione e proporre l’installazione se è più recente;
 - specificare repository, nome del pacchetto, canale ed eseguibile nelle opzioni
   avanzate, oppure indicare un manifest JSON/appcast;
 - scegliere un DEB già scaricato per aggiornare il corrispondente pacchetto
@@ -72,7 +76,8 @@ Selezionando una riga assistita è possibile:
 
 Le associazioni sono salvate per installazione in
 `${XDG_CONFIG_HOME:-~/.config}/ubuntu-update-utility/sources.json`.
-Dopo **Salva fonte**, ripetere la ricerca. Un manifest JSON semplice usa
+Dopo **Salva fonte**, ripetere la ricerca. Per automatizzare il download, indicare
+un link diretto al DEB o una delle fonti strutturate. Un manifest JSON semplice usa
 `version`, `url` HTTPS e, quando pubblicato, `sha256`.
 
 FortiClient può richiedere accesso al portale o indicazioni aziendali; XAMPP può

@@ -35,11 +35,20 @@ def validate_url(url):
     return url
 
 
+def deb_url(record):
+    if record.get('deb_url'):
+        return record['deb_url']
+    if record.get('repository') or record.get('manifest'):
+        return ''
+    homepage = record.get('homepage', '')
+    return homepage if urlsplit(homepage).path.lower().endswith('.deb') else ''
+
+
 def validate(record):
-    allowed={'homepage','repository','version','provider','asset','channel','entrypoint','manifest','recovery_path','previous_version'}
+    allowed={'homepage','repository','version','provider','asset','channel','entrypoint','manifest','deb_url','recovery_path','previous_version'}
     if not isinstance(record,dict) or not all(isinstance(v,str) for v in record.values()):raise ValueError('Valori della fonte non validi')
     if set(record)-allowed: raise ValueError('Campo della fonte non consentito')
-    for key in ('homepage','manifest'):
+    for key in ('homepage','manifest','deb_url'):
         if record.get(key): validate_url(record[key])
     if record.get('provider','github') not in ('github','json','appcast'):raise ValueError('Tipo di fonte non supportato')
 

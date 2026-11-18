@@ -30,6 +30,11 @@ def present(parent,installation,reply):
         entry=Adw.EntryRow(title=label);entry.set_text(str(default or ''))
         fields[key]=entry
         (box if key in ('homepage','version') else advanced).append(entry)
+    if installation.get('package'):
+        entry=Adw.EntryRow(title='Link diretto al pacchetto DEB (HTTPS)')
+        entry.set_text(record.get('deb_url',''))
+        fields['deb_url']=entry
+        box.append(entry)
     kind=Gtk.DropDown.new_from_strings(['Rilevamento / GitHub','Manifest JSON','Appcast XML'])
     kind.set_selected({'json':1,'appcast':2}.get(record.get('provider'),0));advanced.append(kind)
     expander=Gtk.Expander(label='Fonte di aggiornamento avanzata',expanded=bool(record.get('repository') or record.get('manifest')))
@@ -44,14 +49,12 @@ def present(parent,installation,reply):
         try:
             data={key:entry.get_text().strip() for key,entry in fields.items() if entry.get_text().strip()}
             data['provider']=['github','json','appcast'][kind.get_selected()]
-            for key in ('homepage','manifest'):
-                if data.get(key):profiles.validate_url(data[key])
             if data.get('repository') and not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',data['repository']):raise ValueError('Repository: inserisci proprietario/progetto.')
             if data.get('entrypoint'):
                 value=Path(data['entrypoint'])
                 if value.is_absolute() or '..' in value.parts:raise ValueError('L’eseguibile deve essere relativo alla cartella dell’archivio.')
             if data.get('asset') and ('/' in data['asset'] or '\\' in data['asset']):raise ValueError('Inserisci solo il nome del pacchetto, senza cartelle.')
-            if not any(data.get(key) for key in ('homepage','repository','manifest')):raise ValueError('Indica almeno una fonte ufficiale.')
+            if not any(data.get(key) for key in ('homepage','repository','manifest','deb_url')):raise ValueError('Indica almeno una fonte ufficiale.')
             for key in ('recovery_path','previous_version'):
                 if record.get(key):data[key]=record[key]
             profiles.validate(data)

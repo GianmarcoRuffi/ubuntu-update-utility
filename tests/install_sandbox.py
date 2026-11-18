@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 assert os.geteuid()==0
-archive=Path(__file__).resolve().parents[1]/'dist/ubuntu-update-utility_0.5.0_all.deb'
+archive=Path(__file__).resolve().parents[1]/'dist/ubuntu-update-utility_0.5.1_all.deb'
 with tempfile.TemporaryDirectory() as temp:
     temp=Path(temp);target=temp/'root';target.mkdir()
     args=['/usr/bin/dpkg','--root='+str(target),'--log='+str(temp/'dpkg.log'),'--force-depends']

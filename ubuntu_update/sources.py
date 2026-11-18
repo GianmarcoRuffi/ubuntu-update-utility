@@ -1,4 +1,4 @@
-"""Fixed vendor sources and bounded HTTPS transfers (no user supplied URLs)."""
+"""Fixed vendor sources and bounded HTTPS transfers with explicit host lists."""
 import hashlib
 import json
 from pathlib import Path
@@ -11,6 +11,7 @@ HOSTS = {'api.github.com', 'github.com', 'release-assets.githubusercontent.com',
          'objects.githubusercontent.com', 'desktop.docker.com', 'docs.docker.com',
          'dbeaver.io', 'downloads.dbeaver.net', 'dl.pstmn.io', 'downloads.getpostman.com', 'dlcdn.apache.org',
          'downloads.apache.org', 'jmeter.apache.org', 'www.apachefriends.org'}
+DISCORD_CDNS = {'stable.dl2.discordapp.net', 'dl.discordapp.net'}
 
 
 def validate_url(url, allowed_hosts=None):
@@ -28,10 +29,14 @@ class Redirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def fetch(url, target=None, limit=8*1024*1024, allowed_hosts=None):
-    request = urllib.request.Request(validate_url(url,allowed_hosts), headers={'User-Agent': 'UbuntuUpdateUtility/1.0', 'Accept': 'application/json' if 'api.github.com' in url else '*/*'})
+def open_url(url, allowed_hosts=None, *, method='GET'):
+    request = urllib.request.Request(validate_url(url,allowed_hosts), headers={'User-Agent': 'UbuntuUpdateUtility/1.0', 'Accept': 'application/json' if 'api.github.com' in url else '*/*'}, method=method)
     opener = urllib.request.build_opener(Redirect(allowed_hosts))
-    with opener.open(request, timeout=30) as response:
+    return opener.open(request, timeout=30)
+
+
+def fetch(url, target=None, limit=8*1024*1024, allowed_hosts=None):
+    with open_url(url, allowed_hosts) as response:
         validate_url(response.url,allowed_hosts)
         length = response.headers.get('Content-Length')
         if length and int(length) > limit: raise ValueError('Download oltre il limite previsto')
@@ -92,6 +97,20 @@ def verify(path, digest, algorithm='sha256'):
 
 
 def package_source(package, arch):
+    if package == 'discord':
+        if arch != 'amd64':
+            raise ValueError('Architettura Discord non supportata')
+        endpoint = 'https://discord.com/api/download?format=deb&platform=linux'
+        with open_url(endpoint, DISCORD_CDNS | {'discord.com'}, method='HEAD') as response:
+            url = validate_url(response.url, DISCORD_CDNS)
+        path = urllib.parse.urlsplit(url).path
+        match = re.fullmatch(r'/distro/app/stable/linux/x64/(\d+(?:\.\d+)+)/Discord\.deb', path)
+        if not match:
+            match = re.fullmatch(r'/apps/linux/(\d+(?:\.\d+)+)/discord-\1\.deb', path)
+        if not match:
+            raise ValueError('Versione del DEB ufficiale di Discord non identificata')
+        return dict(version=match[1], url=url, name='discord.deb', sha256='',
+                    page='https://discord.com/download', hosts=DISCORD_CDNS)
     if package == 'github-desktop':
         return github_asset('shiftkey/desktop', rf'GitHubDesktop-linux-{arch}-.*\.deb')
     if package == 'teams-for-linux':
